@@ -62,6 +62,3 @@ pnpm format:check
 pnpm test
 pnpm build
 ```
-# ledgerpage
-# ledgerpage
-# ledgerpage
