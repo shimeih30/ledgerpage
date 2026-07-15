@@ -6,9 +6,12 @@ import react from '@vitejs/plugin-react'
 // 'electron' module under the installed Vite/Rolldown version — it was
 // observed bundling the npm 'electron' launcher package (Node-side binary
 // path resolution) in place of Electron's runtime-provided API, which
-// silently breaks contextBridge/app/BrowserWindow at runtime. 'electron'
-// and node: builtins are externalized explicitly below as a safeguard.
-const externalForElectronRuntime = [/^electron$/, /^node:/]
+// silently breaks contextBridge/app/BrowserWindow at runtime. 'electron',
+// node: builtins, and better-sqlite3 (a native module, which must never
+// be bundled — it ships a compiled .node binary resolved at runtime via
+// node_modules, not something a JS bundler can inline) are externalized
+// explicitly below as a safeguard.
+const externalForElectronRuntime = [/^electron$/, /^node:/, /^better-sqlite3$/]
 
 export default defineConfig({
   main: {
