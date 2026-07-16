@@ -1,4 +1,7 @@
-import { buildContentSecurityPolicy } from './contentSecurityPolicy'
+import {
+  buildDevelopmentContentSecurityPolicy,
+  buildProductionContentSecurityPolicy
+} from './contentSecurityPolicy'
 
 /**
  * The minimal slice of Electron.Session this module needs.
@@ -31,7 +34,9 @@ export function configureContentSecurityPolicy(
   session: CspConfigurableSession,
   devServerOrigin?: string
 ): void {
-  const csp = buildContentSecurityPolicy(devServerOrigin)
+  const csp = devServerOrigin
+    ? buildDevelopmentContentSecurityPolicy(devServerOrigin)
+    : buildProductionContentSecurityPolicy()
 
   session.webRequest.onHeadersReceived((details, callback) => {
     const existingHeaders = details.responseHeaders ?? {}

@@ -11,19 +11,43 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 4
+## Current status: M1, Slice 5
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
-Slice 4 adds the first permanent tables: stable reference data that later
-business tables will reference.
+Slice 4 added the first permanent reference-data tables. Slice 5 adds the
+first company-owned tables — a database-and-service-enforced singleton
+company profile and the document-numbering configuration later modules
+will allocate numbers from.
 
-**Intentionally absent at this stage:** companies, users, roles, products,
-inventory, customers, suppliers, orders, recipes, production, expenses,
-accounts, taxes, exchange rates, unit conversions, any UI management
-screens, and any database or filesystem access exposed to the renderer.
-The only renderer-facing API remains the single
-`window.ledgerpage.getAppInfo()` call from Slice 2.
+**Intentionally absent at this stage:** any _seeded_ company data (the
+`company` and `numbering_rules` tables exist but are empty — see below),
+users, roles, authentication, products, inventory, customers, suppliers,
+orders, recipes, production, expenses, accounts, taxes, exchange rates,
+unit conversions, any UI management screens, and any database or
+filesystem access exposed to the renderer. The only renderer-facing API
+remains the single `window.ledgerpage.getAppInfo()` call from Slice 2.
+
+### Company profile & document numbering
+
+`company` is a strict singleton: its `id` column has both a `PRIMARY KEY`
+and a `CHECK (id = 'primary_company')` constraint, so SQLite itself
+rejects a second row and any row with a different id — not just
+`companyService`, which never accepts an `id` parameter from any caller
+either. No company row is seeded by this slice; the real one (with Farmer
+Ben's actual name, address, and details) is created by Slice 8's
+first-run setup wizard.
+
+`numbering_rules` holds one row per document type (quotation, sales
+order, invoice, delivery note, purchase order, goods receipt, production
+batch, customer, supplier, product), each with a prefix, six-digit
+padding, and a reset behavior (`yearly`, restarting at 1 each UTC year,
+or `never`, continuing indefinitely). `numberingService.allocateNext`
+allocates atomically inside a caller-provided transaction — its type
+signature requires an active transaction, making it a compile-time error
+to call outside one. The 10 approved defaults are frozen in
+`src/main/db/numberingDefaults.ts` but, like the company row, are only
+ever inserted by Slice 8 — this slice ships the mechanism, not the data.
 
 ### Reference data
 
@@ -109,6 +133,45 @@ is available — `pnpm rebuild:node` for tests, `pnpm rebuild:electron` for
 dev/preview. A `NODE_MODULE_VERSION` mismatch error indicates the module
 is currently built for the wrong runtime ABI; that's the signal to run
 whichever of those two matches what you're about to do.
+
+### Preload build format
+
+`out/preload/index.js` is built as a single self-contained CommonJS file
+(`require()`, no top-level `import`/`export`), never ES module syntax.
+Electron's sandboxed preload loader (`sandbox: true`, which LedgerPage
+always keeps enabled) evaluates the preload script as a classic script
+regardless of this project's `package.json` `"type": "module"` — top-level
+`import`/`export` there is a hard parse error
+(`SyntaxError: Cannot use import statement outside a module`), even though
+the identical file is valid as an ES module under plain Node. Main process
+and renderer output both remain ES modules; only the preload build target
+is affected.
+
+### Development vs. production Content-Security-Policy
+
+Two separate, explicit policies — never one function branching on a flag:
+
+- **Production** (`buildProductionContentSecurityPolicy`): strict,
+  `'self'`-only for scripts and connections, no inline scripts, no remote
+  origins. This is what every packaged (`file://`) load runs under.
+- **Development** (`buildDevelopmentContentSecurityPolicy`): additionally
+  trusts exactly one already-validated loopback origin (never a wildcard,
+  never a remote host) for both its HTTP and WebSocket forms, and adds
+  `'unsafe-inline'` to `script-src` only — required because Vite's React
+  plugin injects an inline `<script type="module">` "preamble" (sets up
+  React Refresh globals) whose exact content is generated per dev session,
+  with no static nonce/hash to allow instead. This trade-off never applies
+  to the production policy.
+
+### Common failure to recognize
+
+If the Electron window is completely white with a `SyntaxError` about
+`import` in the preload, or a CSP violation naming an inline script
+followed by "`@vitejs/plugin-react` can't detect preamble" — that's this
+exact preload-format / dev-CSP interaction. Both are covered by automated
+tests (`tests/build/preloadOutput.test.ts`,
+`tests/main/contentSecurityPolicy.test.ts`) so a regression here should
+fail `pnpm test` before it ever reaches a real launch.
 
 ## Requirements
 
