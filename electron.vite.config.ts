@@ -30,6 +30,21 @@ export default defineConfig({
     build: {
       rollupOptions: {
         external: externalForElectronRuntime,
+        // Electron's sandboxed preload loader (sandbox: true) evaluates
+        // the preload script as a classic (non-ESM) script, regardless of
+        // this project's package.json "type": "module" — so top-level
+        // import/export syntax is a hard parse error there
+        // ("SyntaxError: Cannot use import statement outside a module"),
+        // even though the identical file is perfectly valid as an ES
+        // module under plain Node. format: 'cjs' makes Rollup emit
+        // require()/no top-level export instead. entryFileNames keeps the
+        // output at index.js (Vite would otherwise rename a CJS output
+        // file to index.cjs inside a "type": "module" package) — main and
+        // renderer both still reference '../preload/index.js'.
+        output: {
+          format: 'cjs',
+          entryFileNames: 'index.js'
+        },
         input: {
           index: resolve(__dirname, 'src/preload/index.ts')
         }

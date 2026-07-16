@@ -8,6 +8,13 @@
       "when": 1784112395786,
       "tag": "0000_reference_data_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784198610405,
+      "tag": "0001_company_and_numbering_rules",
+      "breakpoints": true
     }
   ]
 }

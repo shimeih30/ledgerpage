@@ -155,4 +155,20 @@ describe('initializeDatabase', () => {
 
     expect(() => initializeDatabase(baseDir, brokenSeedMigrationsDir)).toThrow()
   })
+
+  it('leaves company and numbering_rules empty after a normal startup (Slice 5 adds no seeding)', () => {
+    const result = initializeDatabase(baseDir, REAL_MIGRATIONS_FOLDER)
+
+    const companyCount = (
+      result.db.prepare('SELECT COUNT(*) as c FROM company').get() as { c: number }
+    ).c
+    const numberingCount = (
+      result.db.prepare('SELECT COUNT(*) as c FROM numbering_rules').get() as { c: number }
+    ).c
+
+    expect(companyCount).toBe(0)
+    expect(numberingCount).toBe(0)
+
+    result.db.close()
+  })
 })

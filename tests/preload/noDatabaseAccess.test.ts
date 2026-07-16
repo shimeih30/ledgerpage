@@ -81,3 +81,42 @@ describe('preload API surface after Slice 4', () => {
     expect(Object.keys(api)).toEqual(['getAppInfo'])
   })
 })
+
+/**
+ * Slice 5 adds the company profile and document-numbering tables and
+ * services. This test exists to make explicit that none of that reaches
+ * the renderer either — no company read/write API, no numbering
+ * allocation API, no arbitrary SQL IPC of any kind.
+ */
+describe('preload API surface after Slice 5', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    exposeInMainWorld.mockClear()
+  })
+
+  it('does not expose any company or numbering method to the renderer', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+
+    for (const forbidden of [
+      'company',
+      'numbering',
+      'sequence',
+      'allocate',
+      'invoice',
+      'quotation',
+      'order'
+    ]) {
+      expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
+    }
+  })
+
+  it('still exposes exactly the Slice 2 app-info API after Slice 5 — nothing added', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    expect(Object.keys(api)).toEqual(['getAppInfo'])
+  })
+})
