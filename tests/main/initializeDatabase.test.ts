@@ -171,4 +171,20 @@ describe('initializeDatabase', () => {
 
     result.db.close()
   })
+
+  it('leaves tax_codes and tax_rate_versions empty after a normal startup (Slice 6 adds no seeding)', () => {
+    const result = initializeDatabase(baseDir, REAL_MIGRATIONS_FOLDER)
+
+    const taxCodeCount = (
+      result.db.prepare('SELECT COUNT(*) as c FROM tax_codes').get() as { c: number }
+    ).c
+    const rateVersionCount = (
+      result.db.prepare('SELECT COUNT(*) as c FROM tax_rate_versions').get() as { c: number }
+    ).c
+
+    expect(taxCodeCount).toBe(0)
+    expect(rateVersionCount).toBe(0)
+
+    result.db.close()
+  })
 })

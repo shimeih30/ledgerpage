@@ -15,6 +15,13 @@
       "when": 1784198610405,
       "tag": "0001_company_and_numbering_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784214172213,
+      "tag": "0002_tax_configuration",
+      "breakpoints": true
     }
   ]
 }
