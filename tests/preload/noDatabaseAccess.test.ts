@@ -120,3 +120,34 @@ describe('preload API surface after Slice 5', () => {
     expect(Object.keys(api)).toEqual(['getAppInfo'])
   })
 })
+
+/**
+ * Slice 6 adds tax configuration (tax_codes, tax_rate_versions) and
+ * three services (taxCodeService, taxRateVersionService,
+ * taxRateResolutionService). This test exists to make explicit that
+ * none of that reaches the renderer either.
+ */
+describe('preload API surface after Slice 6', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    exposeInMainWorld.mockClear()
+  })
+
+  it('does not expose any tax method to the renderer', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+
+    for (const forbidden of ['tax', 'vat', 'rate', 'ppm', 'resolve']) {
+      expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
+    }
+  })
+
+  it('still exposes exactly the Slice 2 app-info API after Slice 6 — nothing added', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    expect(Object.keys(api)).toEqual(['getAppInfo'])
+  })
+})

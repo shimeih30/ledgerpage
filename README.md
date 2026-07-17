@@ -11,22 +11,24 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 5
+## Current status: M1, Slice 6
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
-Slice 4 added the first permanent reference-data tables. Slice 5 adds the
+Slice 4 added the first permanent reference-data tables. Slice 5 added the
 first company-owned tables — a database-and-service-enforced singleton
-company profile and the document-numbering configuration later modules
-will allocate numbers from.
+company profile and document-numbering configuration. Slice 6 adds tax
+configuration: company-scoped tax codes and their effective-dated rate
+history, so a rate change today never alters the tax rate that applied to
+an older transaction date.
 
-**Intentionally absent at this stage:** any _seeded_ company data (the
-`company` and `numbering_rules` tables exist but are empty — see below),
-users, roles, authentication, products, inventory, customers, suppliers,
-orders, recipes, production, expenses, accounts, taxes, exchange rates,
-unit conversions, any UI management screens, and any database or
-filesystem access exposed to the renderer. The only renderer-facing API
-remains the single `window.ledgerpage.getAppInfo()` call from Slice 2.
+**Intentionally absent at this stage:** any _seeded_ company, numbering, or
+tax data (all of these tables exist but are empty — see below), users,
+roles, authentication, products, inventory, customers, suppliers, orders,
+recipes, production, expenses, accounts, exchange rates, unit conversions,
+any UI management screens, and any database or filesystem access exposed
+to the renderer. The only renderer-facing API remains the single
+`window.ledgerpage.getAppInfo()` call from Slice 2.
 
 ### Company profile & document numbering
 
@@ -48,6 +50,59 @@ signature requires an active transaction, making it a compile-time error
 to call outside one. The 10 approved defaults are frozen in
 `src/main/db/numberingDefaults.ts` but, like the company row, are only
 ever inserted by Slice 8 — this slice ships the mechanism, not the data.
+
+### Tax configuration
+
+`tax_codes` are company-scoped identities (`standard` / `zero_rated` /
+`exempt` / `other`), normalized on creation (trimmed, upper-cased) and
+retired by deactivation, never deletion — a tax code may be referenced by
+historical rate versions and, later, historical transactions. No tax
+codes are seeded; Farmer Ben's remains non-VAT-registered by default, and
+`company.vat_registered` is never changed automatically by this slice.
+
+**Category is immutable once a rate version exists.** Resolution reads a
+tax code's _current_ category, so changing it after a rate version has
+been created would silently rewrite already-resolved history (a
+`standard` code's 15% versions would start resolving as zero if it were
+switched to `zero_rated`). `taxCodeService.updateTaxCode` checks this
+inside the same transaction as the update — never a separate check that
+could diverge from the write — and requires a caller-provided
+transaction (`AppTransaction`) for exactly that reason. Changing to the
+same category remains a no-op even after versions exist; name,
+description, and activation stay freely editable always.
+
+`tax_rate_versions` holds effective-dated rate history per code, so
+changing today's rate can never alter the rate that applied to an older
+transaction. Rates are stored as integer parts-per-million — **15% is
+exactly 150,000 ppm** (`percent × 10,000`) — never a float.
+**`zero_rated`/`exempt` canonically store `null`**: omitting the rate,
+supplying `null`, or supplying exactly `0` all normalize to `null`;
+supplying any other non-zero value is rejected outright rather than
+stored as contradictory data. `standard`/`other` always require a
+non-null rate — `taxRateVersionService` revalidates the _final_ proposed
+value against the tax code's category on every create and every update,
+even when an update never touches `ratePpm`, so a previously-stored value
+can never be silently carried forward without being checked again.
+
+Effective dates are ISO `YYYY-MM-DD` calendar dates, validated by a
+hand-written calendar checker rather than `new Date()`, which was
+confirmed empirically to silently roll an invalid date like `2026-02-30`
+forward to March 2nd instead of rejecting it. Both `effective_from` and
+`effective_to` are inclusive; `taxRateVersionService.createTaxRateVersion`
+and `updateTaxRateVersion` reject any date range that overlaps an
+existing version of the same code (checked inside the same transaction as
+the write).
+
+`taxRateResolutionService.resolveTaxRate` is a pure, read-only lookup
+that never mutates data and resolves deterministically regardless of the
+tax code's current active state or the machine's local timezone. A
+`{ code }` lookup is normalized with the same function `taxCodeService`
+uses, and both lookup paths (`{ taxCodeId }` and `{ code }`) are scoped to
+the singleton company. `zero_rated`/`exempt` always resolve to exactly
+zero; `standard`/`other` require a non-null stored rate — if a matched
+version's rate is somehow null (data corruption, since the write path no
+longer permits this), resolution throws `TaxResolutionIntegrityError`
+rather than silently substituting zero.
 
 ### Reference data
 
