@@ -22,6 +22,13 @@
       "when": 1784214172213,
       "tag": "0002_tax_configuration",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784272918521,
+      "tag": "0003_authentication_foundations",
+      "breakpoints": true
     }
   ]
 }

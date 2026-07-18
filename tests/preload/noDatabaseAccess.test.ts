@@ -151,3 +151,45 @@ describe('preload API surface after Slice 6', () => {
     expect(Object.keys(api)).toEqual(['getAppInfo'])
   })
 })
+
+/**
+ * Slice 7 adds authentication and authorization (users, roles,
+ * user_roles, owner_recovery_credentials, login_events, plus password
+ * hashing, sessions, and the recovery ceremony). This test exists to
+ * make explicit that none of that reaches the renderer either -- no
+ * login, no session, no password, no recovery API of any kind.
+ */
+describe('preload API surface after Slice 7', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    exposeInMainWorld.mockClear()
+  })
+
+  it('does not expose any authentication/authorization method to the renderer', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+
+    for (const forbidden of [
+      'login',
+      'logout',
+      'auth',
+      'password',
+      'session',
+      'user',
+      'role',
+      'recovery',
+      'permission'
+    ]) {
+      expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
+    }
+  })
+
+  it('still exposes exactly the Slice 2 app-info API after Slice 7 -- nothing added', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    expect(Object.keys(api)).toEqual(['getAppInfo'])
+  })
+})

@@ -187,4 +187,20 @@ describe('initializeDatabase', () => {
 
     result.db.close()
   })
+
+  it('leaves users, user_roles, owner_recovery_credentials, and login_events empty, but seeds the four fixed roles, after a normal startup', () => {
+    const result = initializeDatabase(baseDir, REAL_MIGRATIONS_FOLDER)
+
+    const roleCount = (result.db.prepare('SELECT COUNT(*) as c FROM roles').get() as { c: number })
+      .c
+    expect(roleCount).toBe(4)
+
+    for (const table of ['users', 'user_roles', 'owner_recovery_credentials', 'login_events']) {
+      const count = (result.db.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as { c: number })
+        .c
+      expect(count).toBe(0)
+    }
+
+    result.db.close()
+  })
 })

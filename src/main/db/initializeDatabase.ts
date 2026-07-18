@@ -7,6 +7,7 @@ import {
 import { createDatabaseConnection } from './connection'
 import { runMigrations } from './runMigrations'
 import { seedReferenceData } from './seedReferenceData'
+import { seedRoles } from './seedRoles'
 
 export interface InitializeDatabaseResult {
   db: Database.Database
@@ -22,6 +23,10 @@ export interface InitializeDatabaseResult {
  * 4. Apply any pending forward-only migrations.
  * 5. Seed reference data (idempotent — inserts only rows that don't
  *    already exist, never overwrites existing ones).
+ * 6. Seed the four fixed roles (same idempotent pattern). No user,
+ *    user_role, recovery-credential, or login-event rows are ever
+ *    seeded — those require a real company and a real first-run flow
+ *    (Slice 8).
  *
  * Throws on any failure — directory creation, connection, migration, or
  * seeding — rather than returning a partial or unusable result. The
@@ -41,6 +46,7 @@ export function initializeDatabase(
   try {
     runMigrations(db, migrationsFolder)
     seedReferenceData(db)
+    seedRoles(db)
   } catch (error) {
     // A partially-migrated or partially-seeded connection must not be
     // handed back as if startup succeeded.
