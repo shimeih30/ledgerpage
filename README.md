@@ -11,24 +11,230 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 6
+## Current status: M1, Slice 7
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
 Slice 4 added the first permanent reference-data tables. Slice 5 added the
 first company-owned tables — a database-and-service-enforced singleton
-company profile and document-numbering configuration. Slice 6 adds tax
+company profile and document-numbering configuration. Slice 6 added tax
 configuration: company-scoped tax codes and their effective-dated rate
-history, so a rate change today never alters the tax rate that applied to
-an older transaction date.
+history. Slice 7 adds authentication and authorization primitives —
+password hashing, users, roles, sessions, and an owner recovery-credential
+ceremony — with no renderer screens or IPC endpoints yet.
 
-**Intentionally absent at this stage:** any _seeded_ company, numbering, or
-tax data (all of these tables exist but are empty — see below), users,
-roles, authentication, products, inventory, customers, suppliers, orders,
-recipes, production, expenses, accounts, exchange rates, unit conversions,
-any UI management screens, and any database or filesystem access exposed
-to the renderer. The only renderer-facing API remains the single
-`window.ledgerpage.getAppInfo()` call from Slice 2.
+**Intentionally absent at this stage:** any _seeded_ company, numbering,
+tax, or user data (the four fixed roles are the one exception — see
+below), authentication IPC, products, inventory, customers, suppliers,
+orders, recipes, production, expenses, accounts, exchange rates, unit
+conversions, any UI management screens, and any database or filesystem
+access exposed to the renderer. The only renderer-facing API remains the
+single `window.ledgerpage.getAppInfo()` call from Slice 2.
+
+### Authentication foundations
+
+Password hashing uses **Argon2id via `hash-wasm`**, deliberately chosen
+over a native-binding Argon2 package: `hash-wasm` has zero native
+compilation (no `binding.gyp`, no postinstall step, the compiled WASM is
+embedded directly in its JS), which sidesteps entirely the Node-ABI-vs-
+Electron-ABI class of problem this project has had with `better-sqlite3`
+throughout — confirmed by building it into the actual main-process bundle
+and inspecting the output. Parameters are explicit (64 MiB memory, 3
+iterations, 1-way parallelism, ~280ms per hash on typical hardware) —
+stronger than OWASP's baseline, since LedgerPage only ever hashes once
+per login on the user's own machine, never under concurrent server load.
+
+`users`/`roles`/`user_roles`/`owner_recovery_credentials`/`login_events`
+are added but not seeded — except `roles`, which (like Slice 4's
+reference data) is fixed, idempotently-seeded application data: `owner`,
+`executive`, `operations`, `finance`. The real `users` row and its role
+assignment are Slice 8's job, as part of first-run setup.
+
+**Anti-enumeration:** `authenticationService.authenticate` runs the same
+password-verification step for every case — nonexistent identifier, wrong
+password, inactive user, locked user — using a fixed precomputed dummy
+Argon2id hash when no real user is found, so there is no code path that
+returns early based on whether an account exists. `login_events` never
+records an unmatched login identifier (`user_id` is `NULL` instead), and
+a failed attempt increments a real user's `failed_login_count` only when
+the password itself was wrong — not when a correct password was blocked
+by an inactive/locked gate.
+
+Sessions are in-memory only (no session table — see
+`src/main/auth/sessionManager.ts`); the owner recovery-credential ceremony
+generates a 160-bit key in Crockford Base32 (grouped for transcription),
+stores only its hash during the pending ceremony, and commits the
+rotation (revoke prior active credential + insert the new one) atomically
+via a caller-controlled transaction, matching the pattern already
+established by `numberingService`/`taxRateVersionService`. Authorization
+is a single central `can`/`assertCan` service with a fixed action set and
+role matrix; both fail closed on an unrecognized role or action.
+
+**Security patch applied before freezing, in four passes:**
+
+1. **Session unlock requires proof, not a comment — and the verified-unlock
+   operation itself is the only door, not a separately exported one.**
+   `SessionManager` has no public `unlock` method. The only way to clear a
+   session's lock flag is the `unlockWithCredentials(db, sessionId, password, now?)`
+   method on the manager itself, defined inside the same closure that owns
+   the session records — not a separately exported function reachable by
+   any other main-process module. An earlier version of this fix exported
+   a `applyVerifiedUnlock(manager, sessionId, now?)` function as the "door"
+   into a `WeakMap`-gated private mutator; that export was itself an
+   unrestricted, credential-free way to clear the lock flag, since nothing
+   stopped another module from importing and calling it directly. Folding
+   the whole verified-unlock operation into `sessionManager.ts` — calling
+   `authenticate(db, ..., 'session_unlock', now)` internally and only then
+   touching the closure-private records — removes that gap entirely: there
+   is no exported symbol, anywhere, capable of clearing `isLocked` without
+   real credential verification.
+2. **Recovery confirmation is an unforgeable capability, consumed exactly
+   when the database commit truly happens.** `confirmCeremony` returns only
+   `{ commitToken }` — an opaque string — never `userId`/`recoveryKeyHash`.
+   `commitCredential` is a method on the same service instance and looks
+   the token up against private, per-instance state; a fabricated,
+   unconfirmed, expired, or wrong-instance token is rejected. Consumption
+   uses a small, general-purpose transaction wrapper
+   (`src/main/db/appTransaction.ts`'s `runAppTransaction`, used narrowly —
+   only here) that runs a real SQLite transaction and, only once it has
+   actually returned instead of throwing, invokes any `afterCommit`
+   callbacks registered during it; `commitCredential` registers its own
+   capability-deletion as one such callback. A rolled-back attempt never
+   runs that callback, so the capability remains for a retry with the same
+   token; a genuinely committed attempt removes it immediately, so reuse
+   fails at the initial in-memory lookup, not a second database query. An
+   earlier version of this fix instead left the capability in memory and
+   relied on checking whether the eventual credential row already existed
+   in the database before writing — technically preventing a duplicate
+   insert, but never actually _consuming_ the capability at the moment of
+   a successful commit, as required. Both versions were verified end-to-end
+   against a real transaction before being relied on, not merely assumed.
+3. **`createUser`/`changePassword` validate the actual hash before
+   persisting it**, not just "is this a non-empty string" —
+   `validatePasswordHashForStorage` requires the literal `argon2id`
+   variant, version 19, and the currently-approved m/t/p parameters
+   exactly, rejecting plaintext, malformed strings, argon2i/argon2d, and
+   outdated-parameter hashes. `hashPassword`'s return type is branded
+   (`PasswordHash`) as a compile-time nudge only — every persistence
+   point re-validates at runtime regardless, since branding alone isn't
+   a security boundary.
+4. **Session snapshots clone every mutable value, both directions.**
+   `createdAt`/`lastActivityAt` are cloned `Date` objects on every
+   returned snapshot (JS `Date`s are mutable references — returning the
+   original let a caller silently corrupt internal state through what
+   looked like a read-only snapshot), and a `Date` from the injectable
+   clock is cloned before being stored too. `idleTimeoutMs` and
+   `randomId()`'s output are validated; a colliding session ID is
+   retried up to a bounded limit before failing closed with
+   `SessionManagerError` — a live session is never silently overwritten.
+5. **Authentication state transitions are serialized**, closing a real
+   TOCTOU race: two concurrent `authenticate()` calls could previously
+   both read the same `failed_login_count` before either call's Argon2id
+   verification resolved, then both write the same incremented value,
+   undercounting attempts. Every `authenticate()` call (normal login and
+   session unlock alike, since unlock calls `authenticate()` internally)
+   now runs through one single, process-global, non-per-username queue
+   (`authenticationQueue.ts` — global rather than per-identifier
+   specifically to avoid the unbounded-growth risk a per-username lock
+   map would introduce), plus a fresh re-read of the user's lockout state
+   immediately before computing the final write, as a second, independent
+   layer of protection.
+
+A third pass closed three narrower gaps left by the two passes above:
+
+6. **`unlockWithCredentials` re-validates the live session after the
+   `authenticate()` await, never trusting what it captured beforehand.**
+   The method used to capture the session record before awaiting
+   verification and then mutate that same captured object afterward —
+   during real Argon2id verification (a genuine yield point), the
+   session could be destroyed, expired, or invalidated by an unrelated
+   caller, and the stale object reference would still look valid even
+   though it was no longer the live, current session. It now captures
+   only the `userId` before the await, and — only after `authenticate()`
+   reports success — re-reads the session fresh through the same
+   expiry-aware lookup every other method uses, confirming it still
+   exists, still belongs to the authenticated user, and is still
+   locked, before ever touching `isLocked`. If any of that has changed
+   during verification, the ordinary failure result is returned instead
+   — proven by tests using a manually-controlled deferred promise in
+   place of `verifyPassword` (deterministic, not dependent on real
+   Argon2id timing), including a sanity check that destroying,
+   invalidating, or expiring the session during a genuinely buggy
+   version of this code is what those same tests actually catch.
+7. **Recovery ceremony and commit tokens are generated with the same
+   collision protection sessions already had.** `prepareCeremony`/
+   `confirmCeremony` used to call the injected `randomToken()` and
+   insert directly, so a duplicate (only reachable via a misbehaving
+   injected generator, never the default CSPRNG) could silently
+   overwrite an existing pending ceremony or confirmed capability. Both
+   now go through a shared, bounded-retry generator checked against
+   _both_ maps — a ceremony token and a commit token must never collide
+   with each other either, since they are distinct capabilities — and
+   exhausting the retry budget throws a controlled `RecoveryCeremonyError`
+   without ever touching what was already stored.
+8. **`runAppTransaction` rejects an async callback both at compile time
+   and at runtime.** better-sqlite3's transaction callback is fully
+   synchronous; passing an async function would let SQLite consider the
+   transaction "finished" before any awaited work inside it actually
+   ran. A `NotAPromise<T>` conditional type in the callback's signature
+   rejects an async (or otherwise Promise-returning) callback at compile
+   time — verified directly with `@ts-expect-error` fixtures compiled as
+   part of `pnpm typecheck` — and, since that alone can be bypassed by
+   an untyped caller, a runtime check inside the still-open transaction
+   throws a controlled `AsyncTransactionCallbackError` the instant the
+   callback returns anything thenable, rolling the transaction back
+   exactly like any other error (writes made before the callback's
+   first `await` do not survive) and running no `afterCommit` callback.
+
+A fourth pass closed four narrower edge cases:
+
+9.  **`unlockWithCredentials` never falls back to the caller-supplied
+    `sessionId` as a dummy login identifier.** A missing/expired session's
+    `sessionId` is caller-controlled input, not a value this module
+    generates and trusts — it could coincidentally equal a real user's
+    normalized login identifier, which would have let an unlock attempt
+    against a nonexistent session silently increment or lock that
+    unrelated real account. A fixed, private `DUMMY_UNLOCK_LOGIN_IDENTIFIER`
+    constant is used instead, deliberately containing a space so
+    `normalizeLoginIdentifier` structurally rejects it — guaranteed,
+    not merely unlikely, to never resolve to a real account — while
+    still running the full `authenticate()` verification step and
+    recording a `user_id = NULL` event, exactly like any other
+    nonexistent-identifier case.
+10. **Recovery ceremony confirmation is one-time even under concurrent
+    calls.** `confirmCeremony` used to delete the pending ceremony only
+    after awaiting `verifyPassword`, so two concurrent calls for the
+    same token could both verify and both mint a confirmed capability.
+    A `confirmationInProgress` flag, checked and set synchronously
+    before that await, closes this the same way `authenticationQueue`
+    closes the equivalent login race — verified directly, empirically,
+    that JavaScript's run-to-completion semantics make a synchronous
+    check-and-set before the first `await` race-free for two calls
+    invoked back to back. A second concurrent call returns the same
+    ordinary `undefined` a wrong key would. The ceremony's state after
+    the await is re-read fresh — cancellation or expiry during
+    verification is treated as failure, one documented rule either way
+    — and a wrong key or a thrown verification error correctly clears
+    the flag so the ceremony remains retryable, never permanently
+    stuck in progress.
+11. **Commit-token generation happens before any pending-ceremony
+    mutation.** `confirmCeremony` used to delete the pending ceremony
+    and only then generate the commit token — if that generation
+    exhausted its retry budget, the ceremony was already gone with no
+    confirmed capability to show for it. The unique commit token is now
+    generated and validated first; only once that succeeds does the
+    pending-to-confirmed transition happen, with no `await` between
+    removing the old entry and inserting the new one. If generation
+    fails, the original pending ceremony — including being retryable,
+    not stuck in-progress — remains completely untouched.
+12. **`runAppTransaction`'s thenable check now also catches
+    function-shaped thenables.** A plain JavaScript function can carry
+    its own callable `.then` property (`typeof` such a value is
+    `'function'`, not `'object'`), which the previous object-only check
+    silently missed — confirmed directly: without this fix, a
+    function-shaped thenable callback fell through to better-sqlite3's
+    own internal guard instead, throwing a generic `TypeError` rather
+    than the documented, controlled `AsyncTransactionCallbackError`.
 
 ### Company profile & document numbering
 

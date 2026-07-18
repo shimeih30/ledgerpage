@@ -33,7 +33,15 @@
  * chronologically, which keeps date-range logic immune to the machine's
  * local timezone (verified empirically before this schema was written).
  */
-import { check, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core'
+import {
+  check,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  unique,
+  uniqueIndex
+} from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 /**
@@ -251,6 +259,145 @@ export const taxRateVersions = sqliteTable(
     check(
       'tax_rate_versions_date_order',
       sql`${t.effectiveTo} IS NULL OR ${t.effectiveTo} >= ${t.effectiveFrom}`
+    )
+  ]
+)
+
+/**
+ * Slice 7: authentication and authorization primitives. No user rows,
+ * user_role assignments, recovery credentials, or login events are
+ * seeded by this slice — see src/main/auth/. `roles` is the one
+ * exception: it is global, fixed application reference data (not
+ * company-scoped, matching the project's established classification of
+ * role definitions), idempotently seeded by seedRoles.ts.
+ *
+ * Foreign-key actions below are chosen deliberately, not left as
+ * SQLite's default, and documented individually — see each table's
+ * comment. None of this slice's services ever hard-deletes a user or
+ * role (deactivation only); the RESTRICT actions exist so that if a
+ * delete were ever attempted some other way, SQLite refuses it outright
+ * rather than silently destroying security history.
+ */
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    loginIdentifier: text('login_identifier').notNull(),
+    displayName: text('display_name').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    passwordChangedAt: integer('password_changed_at', { mode: 'timestamp_ms' }).notNull(),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    failedLoginCount: integer('failed_login_count').notNull().default(0),
+    lockedUntil: integer('locked_until', { mode: 'timestamp_ms' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('users_company_login_identifier_unique').on(t.companyId, t.loginIdentifier),
+    check('users_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`),
+    check('users_failed_login_count_non_negative', sql`${t.failedLoginCount} >= 0`)
+  ]
+)
+
+/**
+ * Global, fixed application reference data — not company-scoped. Seeded
+ * idempotently (insert-missing-only, never overwrite an edited row) by
+ * seedRoles.ts during normal startup, the same pattern Slice 4 already
+ * established for currencies/units/payment methods/expense categories.
+ */
+export const roles = sqliteTable('roles', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  isSystem: integer('is_system', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+})
+
+/**
+ * user_id/role_id both ON DELETE RESTRICT: an assignment history should
+ * never silently vanish because a user or role row was removed some
+ * other way. No user_role rows are seeded or created by this slice.
+ */
+export const userRoles = sqliteTable(
+  'user_roles',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    roleId: text('role_id')
+      .notNull()
+      .references(() => roles.id, { onDelete: 'restrict' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.roleId] })]
+)
+
+/**
+ * user_id ON DELETE RESTRICT (same reasoning as user_roles): recovery
+ * credential history — including revoked/inactive rows — must survive
+ * independent of any hypothetical future user-deletion path.
+ *
+ * "At most one active recovery credential per user" is enforced with a
+ * partial unique index (`WHERE is_active = 1`), not a plain UNIQUE
+ * constraint — verified empirically against a real connection before
+ * this schema was written: a second active row for the same user is
+ * rejected, while any number of inactive (revoked) rows are freely
+ * allowed to remain as history.
+ */
+export const ownerRecoveryCredentials = sqliteTable(
+  'owner_recovery_credentials',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    recoveryKeyHash: text('recovery_key_hash').notNull(),
+    version: integer('version').notNull(),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    revokedAt: integer('revoked_at', { mode: 'timestamp_ms' })
+  },
+  (t) => [
+    uniqueIndex('owner_recovery_credentials_one_active_per_user')
+      .on(t.userId)
+      .where(sql`${t.isActive} = 1`),
+    check('owner_recovery_credentials_version_positive', sql`${t.version} > 0`)
+  ]
+)
+
+/**
+ * user_id ON DELETE SET NULL: unlike the tables above, user_id here is
+ * already nullable and NULL already carries meaning ("no matching
+ * user" — a failed login attempt against a nonexistent identifier).
+ * Allowing it to become NULL if a referenced user row were ever removed
+ * is consistent with that existing meaning; RESTRICT here would make
+ * user deletion permanently impossible after a single login, a much
+ * stronger constraint than this slice intends to impose. Login events
+ * themselves are never deleted or edited by any service — this table is
+ * append-only.
+ *
+ * Privacy: no IP address, no device identifier, and no attempted
+ * unmatched login identifier is ever stored here — see
+ * src/main/auth/authenticationService.ts.
+ */
+export const loginEvents = sqliteTable(
+  'login_events',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull(),
+    success: integer('success', { mode: 'boolean' }).notNull(),
+    source: text('source').notNull()
+  },
+  (t) => [
+    check(
+      'login_events_source_valid',
+      sql`${t.source} IN ('normal_login', 'session_unlock', 'owner_recovery')`
     )
   ]
 )
