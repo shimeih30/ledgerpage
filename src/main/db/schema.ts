@@ -97,6 +97,19 @@ export const PRIMARY_COMPANY_ID = 'primary_company'
 const primaryCompanyIdLiteral = sql.raw(`'${PRIMARY_COMPANY_ID}'`)
 
 /**
+ * The frozen functional currency (see the M1 plan's decision log: "USD
+ * functional currency; ZWG/ZAR/BWP/CNY are reference-only"). Not a
+ * setting — there is no code path anywhere in this application that
+ * lets a caller choose a different functional currency for the
+ * company row. Slice 8's first-run setup uses this constant directly
+ * rather than accepting a currencyId from its own input, and its
+ * "currency confirmation" wizard stage is a read-only confirmation of
+ * this fact, not a picker among the other seeded (reference-only)
+ * currencies.
+ */
+export const FUNCTIONAL_CURRENCY_ID = 'currency_usd'
+
+/**
  * Singleton company profile. The CHECK constraint means SQLite itself
  * rejects any row whose id isn't exactly PRIMARY_COMPANY_ID, and the
  * PRIMARY KEY means SQLite itself rejects a second row even with the

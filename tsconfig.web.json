@@ -18,5 +18,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*"]
+  "include": ["src/renderer/src/**/*", "src/shared/**/*", "tests/renderer/**/*"]
 }

@@ -91,6 +91,46 @@ describe('userService', () => {
       expect(created.lockedUntil).toBeNull()
     })
 
+    describe('optional precomputed id (Slice 8 extension)', () => {
+      it('every existing caller — omitting id — still gets the previous random-generation behavior', async () => {
+        const passwordHash = await hashPassword('another-valid-password')
+        const created = db.transaction((tx) =>
+          createUser(tx, { loginIdentifier: 'nosupplied', displayName: 'No Id', passwordHash })
+        )
+        expect(created.id).toMatch(/^user_/)
+      })
+
+      it('uses the exact supplied id when one is provided', async () => {
+        const passwordHash = await hashPassword('another-valid-password')
+        const created = db.transaction((tx) =>
+          createUser(tx, {
+            id: 'user_precomputed_12345',
+            loginIdentifier: 'precomputed',
+            displayName: 'Precomputed',
+            passwordHash
+          })
+        )
+        expect(created.id).toBe('user_precomputed_12345')
+
+        const fetched = getUserById(db, 'user_precomputed_12345')
+        expect(fetched?.loginIdentifier).toBe('precomputed')
+      })
+
+      it('rejects an empty-string supplied id', async () => {
+        const passwordHash = await hashPassword('another-valid-password')
+        expect(() =>
+          db.transaction((tx) =>
+            createUser(tx, {
+              id: '',
+              loginIdentifier: 'validlogin',
+              displayName: 'X',
+              passwordHash
+            })
+          )
+        ).toThrow(UserServiceError)
+      })
+    })
+
     it('the created user object contains no passwordHash field at all', async () => {
       const created = await createTestUser(db)
       expect('passwordHash' in created).toBe(false)

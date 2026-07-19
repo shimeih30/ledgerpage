@@ -72,7 +72,7 @@ describe('passwordHashing', () => {
     it('rejects an incorrect password', async () => {
       const hash = await hashPassword(VALID_PASSWORD)
       await expect(verifyPassword('wrong password entirely', hash)).resolves.toBe(false)
-    }, 20_000)
+    })
 
     it('is case-sensitive', async () => {
       const hash = await hashPassword(VALID_PASSWORD)
