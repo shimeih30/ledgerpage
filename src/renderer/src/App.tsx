@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import AppShell from './AppShell'
+import { AuthenticatedApp } from './auth/AuthenticatedApp'
 import { InconsistentStateScreen } from './InconsistentStateScreen'
 import { SetupWizard } from './setup/SetupWizard'
 import { pageStyle } from './setup/ui'
@@ -14,6 +14,10 @@ type AppState = { kind: 'loading' } | { kind: 'ready'; status: FirstRunStatus } 
  * itself throwing) is treated the same as inconsistent_state: if this
  * renderer cannot even determine whether setup is needed, the safest
  * response is the same fail-closed screen, not a guess.
+ *
+ * Once setup_complete, everything session-related — login, lock,
+ * logout, and the authenticated shell itself — is AuthenticatedApp's
+ * own concern (Slice 9), not this router's.
  */
 function App() {
   const [state, setState] = useState<AppState>({ kind: 'loading' })
@@ -55,7 +59,7 @@ function App() {
     return <SetupWizard />
   }
 
-  return <AppShell />
+  return <AuthenticatedApp />
 }
 
 export default App

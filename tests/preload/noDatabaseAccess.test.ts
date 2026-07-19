@@ -34,7 +34,7 @@ describe('preload API surface after Slice 3', () => {
     }
   })
 
-  it('still exposes exactly the approved app-info + Slice 8 setup API — nothing unapproved added', async () => {
+  it('still exposes exactly the approved app-info + Slice 8/9 API — nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -45,7 +45,17 @@ describe('preload API surface after Slice 3', () => {
         'prepareRecoveryKey',
         'confirmRecoveryKey',
         'cancelRecoveryKey',
-        'completeSetup'
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
       ].sort()
     )
   })
@@ -83,7 +93,7 @@ describe('preload API surface after Slice 4', () => {
     }
   })
 
-  it('still exposes exactly the approved app-info + Slice 8 setup API after Slice 4 — nothing unapproved added', async () => {
+  it('still exposes exactly the approved app-info + Slice 8/9 API after Slice 4 — nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -94,7 +104,17 @@ describe('preload API surface after Slice 4', () => {
         'prepareRecoveryKey',
         'confirmRecoveryKey',
         'cancelRecoveryKey',
-        'completeSetup'
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
       ].sort()
     )
   })
@@ -131,7 +151,7 @@ describe('preload API surface after Slice 5', () => {
     }
   })
 
-  it('still exposes exactly the approved app-info + Slice 8 setup API after Slice 5 — nothing unapproved added', async () => {
+  it('still exposes exactly the approved app-info + Slice 8/9 API after Slice 5 — nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -142,7 +162,17 @@ describe('preload API surface after Slice 5', () => {
         'prepareRecoveryKey',
         'confirmRecoveryKey',
         'cancelRecoveryKey',
-        'completeSetup'
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
       ].sort()
     )
   })
@@ -166,12 +196,12 @@ describe('preload API surface after Slice 6', () => {
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
     const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
 
-    for (const forbidden of ['tax', 'vat', 'rate', 'ppm', 'resolve']) {
+    for (const forbidden of ['tax', 'vatregist', 'rate', 'ppm', 'resolve']) {
       expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
     }
   })
 
-  it('still exposes exactly the approved app-info + Slice 8 setup API after Slice 6 — nothing unapproved added', async () => {
+  it('still exposes exactly the approved app-info + Slice 8/9 API after Slice 6 — nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -182,7 +212,17 @@ describe('preload API surface after Slice 6', () => {
         'prepareRecoveryKey',
         'confirmRecoveryKey',
         'cancelRecoveryKey',
-        'completeSetup'
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
       ].sort()
     )
   })
@@ -194,12 +234,16 @@ describe('preload API surface after Slice 6', () => {
  * hashing, sessions, and the recovery ceremony). This test originally
  * asserted no authentication-adjacent method of any kind reached the
  * renderer — accurate at the time, since no UI/IPC existed yet. Slice
- * 8 intentionally and narrowly changes that (first-run status, the
- * five setup:* methods), so the forbidden list below now targets
- * specific dangerous patterns (a raw login/session/password API, not
- * the narrow, approved first-run setup surface) rather than broad
- * substrings like "recovery" or "user" that Slice 8's approved method
- * names legitimately contain.
+ * 8 intentionally and narrowly changed that (first-run status, the
+ * five setup:* methods), and Slice 9 further adds the actual
+ * login/lock/logout/user-management surface. The forbidden list below
+ * now targets patterns that remain genuinely dangerous regardless (a
+ * raw password hash, sign-in/out aliases distinct from the approved
+ * "login" name, a general permission-grant API, deleting a user
+ * outright rather than deactivating one, directly assigning/granting a
+ * role bypassing userManagementService's own fixed create-time flow)
+ * rather than broad substrings like "login"/"session"/"unlock" that
+ * Slice 9's approved method names now legitimately contain.
  */
 describe('preload API surface after Slice 7', () => {
   beforeEach(() => {
@@ -207,24 +251,19 @@ describe('preload API surface after Slice 7', () => {
     exposeInMainWorld.mockClear()
   })
 
-  it('does not expose a general login, session, or password-handling method to the renderer', async () => {
+  it('does not expose a raw password hash, sign-in alias, permission grant, or user-deletion method to the renderer', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
     const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
 
     for (const forbidden of [
-      'login',
-      'logout',
       'signin',
       'signout',
       'authenticate',
       'passwordhash',
-      'session',
-      'unlock',
       'permission',
       'manageuser',
-      'listuser',
       'deleteuser',
       'assignrole',
       'grantrole'
@@ -233,7 +272,7 @@ describe('preload API surface after Slice 7', () => {
     }
   })
 
-  it('still exposes exactly the approved app-info + Slice 8 setup API after Slice 7 -- nothing unapproved added', async () => {
+  it('still exposes exactly the approved app-info + Slice 8/9 API after Slice 7 -- nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -244,19 +283,33 @@ describe('preload API surface after Slice 7', () => {
         'prepareRecoveryKey',
         'confirmRecoveryKey',
         'cancelRecoveryKey',
-        'completeSetup'
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
       ].sort()
     )
   })
 })
 
 /**
- * Slice 8 adds real authentication/setup capability to the main
- * process for the first time. This test exists to make explicit that
- * none of the specific things the setup flow works with — a database
- * handle, a password hash, a recovery hash, role mutation, general
- * user-management, or raw session mutation — are exposed through
- * preload, beyond the five narrow setup:* methods.
+ * Slice 8 added real authentication/setup capability to the main
+ * process for the first time; Slice 9 adds the actual login/session
+ * and Owner-gated user-management surface on top. This test exists to
+ * make explicit that the things genuinely still absent — a raw
+ * database handle, arbitrary SQL/filesystem access, a password hash,
+ * a recovery hash, deleting a user outright, or directly
+ * assigning/granting a role bypassing the fixed create-time flow —
+ * are still absent, without re-forbidding the broad substrings
+ * ("role", "session", "unlock", "listuser") that Slice 9's approved
+ * method names now legitimately contain.
  */
 describe('preload API surface after Slice 8', () => {
   beforeEach(() => {
@@ -264,7 +317,7 @@ describe('preload API surface after Slice 8', () => {
     exposeInMainWorld.mockClear()
   })
 
-  it('does not expose a database handle, password hash, recovery hash, role mutation, user-management, or session API', async () => {
+  it('does not expose a database handle, arbitrary SQL/filesystem access, a password/recovery hash, user deletion, or direct role assignment', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -281,18 +334,16 @@ describe('preload API surface after Slice 8', () => {
       'migrate',
       'passwordhash',
       'recoveryhash',
-      'role',
       'manageuser',
-      'listuser',
       'deleteuser',
-      'session',
-      'unlock'
+      'assignrole',
+      'grantrole'
     ]) {
       expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
     }
   })
 
-  it('exposes exactly the approved app-info + five setup methods — nothing else', async () => {
+  it('exposes exactly the approved app-info + Slice 8/9 API after Slice 8 — nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -303,7 +354,85 @@ describe('preload API surface after Slice 8', () => {
         'prepareRecoveryKey',
         'confirmRecoveryKey',
         'cancelRecoveryKey',
-        'completeSetup'
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
+      ].sort()
+    )
+  })
+})
+
+/**
+ * Slice 9 adds the actual login/lock/logout flow and an Owner-only
+ * user-management surface. This test exists to make explicit that the
+ * things this slice specifically must never expose — a raw session id
+ * (no channel accepts or returns one; every operation implicitly
+ * targets "the current session," which only the main process tracks),
+ * a way to change an existing user's role or grant/revoke the Owner
+ * role, a way to delete a user outright rather than deactivate one,
+ * and arbitrary SQL — are still absent, beyond the ten narrow
+ * login/session/users/roles methods.
+ */
+describe('preload API surface after Slice 9', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    exposeInMainWorld.mockClear()
+  })
+
+  it('does not expose a raw session id, role-change, user-deletion, or arbitrary-SQL method', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+
+    for (const forbidden of [
+      'sessionid',
+      'setrole',
+      'changerole',
+      'updaterole',
+      'grantowner',
+      'setowner',
+      'makeowner',
+      'deleteuser',
+      'rawsql',
+      'exec',
+      'passwordhash',
+      'recoveryhash'
+    ]) {
+      expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
+    }
+  })
+
+  it('exposes exactly the approved app-info + Slice 8/9 API after Slice 9 — nothing unapproved added', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    expect(Object.keys(api).sort()).toEqual(
+      [
+        'getAppInfo',
+        'getFirstRunStatus',
+        'prepareRecoveryKey',
+        'confirmRecoveryKey',
+        'cancelRecoveryKey',
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles'
       ].sort()
     )
   })

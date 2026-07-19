@@ -47,7 +47,17 @@ function installMockApi(overrides: MockApiOverrides = {}) {
       overrides.confirmRecoveryKey ??
       vi.fn().mockResolvedValue({ success: true, commitToken: 'commit-token-1' }),
     cancelRecoveryKey: vi.fn().mockResolvedValue(undefined),
-    completeSetup: overrides.completeSetup ?? vi.fn().mockResolvedValue({ success: true })
+    completeSetup: overrides.completeSetup ?? vi.fn().mockResolvedValue({ success: true }),
+    login: vi.fn(),
+    getSessionState: vi.fn(),
+    unlockSession: vi.fn(),
+    logout: vi.fn(),
+    touchSession: vi.fn(),
+    listUsers: vi.fn(),
+    createUser: vi.fn(),
+    deactivateUser: vi.fn(),
+    reactivateUser: vi.fn(),
+    listAssignableRoles: vi.fn()
   }
   window.ledgerpage = api
   return api
