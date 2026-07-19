@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 8
+## Current status: M1, Slice 9
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -21,21 +21,24 @@ company profile and document-numbering configuration. Slice 6 added tax
 configuration: company-scoped tax codes and their effective-dated rate
 history. Slice 7 added authentication and authorization primitives —
 password hashing, users, roles, sessions, and an owner recovery-credential
-ceremony — with no renderer screens or IPC endpoints yet. Slice 8 is where
-those primitives, plus Slice 5's company/numbering-rules tables, are
-actually put to use for the first time: a first-run setup wizard that
-creates the real company profile, the real numbering rules, and the
-application's one initial Owner account, atomically, with a mandatory
-one-time recovery-key ceremony — LedgerPage's first real renderer screens
-and IPC surface.
+ceremony — with no renderer screens or IPC endpoints yet. Slice 8 put those
+primitives to first use: a first-run setup wizard that atomically creates
+the real company profile, the real numbering rules, and the application's
+one initial Owner account, with a mandatory one-time recovery-key
+ceremony. Slice 9 is where the application becomes usable session to
+session: an ordinary login/lock/logout flow for the Owner and any
+additional users the Owner creates, and a minimal, Owner-only Users &
+Roles settings screen — reusing every Slice 7 primitive as-is
+(`authenticate`, `sessionManager`, `can`/`assertCan`) rather than
+duplicating any of it.
 
-**Intentionally absent at this stage:** multi-user management, a general
-login screen (that's Slice 9), role-management UI, password-reset UI,
-company-settings UI, products, inventory, customers, suppliers, orders,
-recipes, production, expenses, accounts, exchange rates, unit conversions,
-persistent sessions, audit logging, and any database or filesystem access
-exposed to the renderer beyond the six narrow, typed methods described
-below.
+**Intentionally absent at this stage:** fine-grained (per-field)
+permissions (roles stay coarse-grained, per the confirmed decision), SSO,
+any way to change an existing user's role once created, audit logging,
+products, inventory, customers, suppliers, orders, recipes, production,
+expenses, accounts, exchange rates, unit conversions, persistent sessions
+across app restarts, and any database or filesystem access exposed to the
+renderer beyond the sixteen narrow, typed methods described below.
 
 ### Authentication foundations
 
@@ -412,6 +415,125 @@ plaintext is genuinely absent from the DOM by the confirmation stage, not
 merely hidden). Setup ends on a completion screen confirming success —
 deliberately no automatic session or login, since the plan's own flow ends
 at "completion" and ordinary login/navigation belongs to Slice 9.
+
+### Users, roles & login
+
+**Reuses every Slice 7 primitive unchanged** — `authenticate`,
+`createSessionManager`, `can`/`assertCan`, `userService`'s
+create/deactivate/reactivate functions — none of them modified for this
+slice. `src/main/users/loginService.ts` and `userManagementService.ts` are
+new, narrow orchestration layers on top, matching the plan's own
+description ("`loginService` wraps Slice 7's primitives"). One detail
+worth flagging explicitly, since it's easy to get backward: `roles.id`
+(the stable `'role_owner'`-shaped primary key used only for the
+`user_roles.role_id` foreign key) and `roles.code` (the lower-case value
+`authorizationService.ROLE_CODES` actually expects, e.g. `'owner'`) are
+two different columns — every authorization-relevant read in this slice
+goes through one shared helper, `getFreshRoleCodesForUser`, that reads
+`roles.code` specifically, confirmed directly against a real database
+before relying on it anywhere else.
+
+**No session id ever reaches the renderer.** `sessionManager`'s sessions
+are keyed by an opaque id, but nothing in this slice's IPC surface accepts
+or returns one — `loginService` tracks exactly one bounded
+`currentSessionId` internally (mirroring `firstRunSetupService`'s
+`ActiveAttempt` pattern from Slice 8) and every operation
+(`getSessionState`, `unlock`, `logout`, `touch`) implicitly targets
+"whatever the current session is." This removes an entire class of
+"supply someone else's session id" risk by construction, not convention —
+there is no parameter for it to forge.
+
+An approval round after the initial implementation identified six gaps,
+each fixed and independently verified by reverting the fix and confirming
+the specific new test failed before restoring it:
+
+1. **Exactly-one-Owner invariant preserved.** `createAdditionalUser`'s
+   `roleCode` is typed `'executive' | 'operations' | 'finance'` at the
+   service layer — `'owner'` is not a representable value, not merely a
+   runtime-rejected one. `deactivateAdditionalUser` checks the _target's_
+   fresh role codes and refuses if they include `'owner'` — one check that
+   covers both "cannot deactivate the Owner" and "the Owner cannot
+   deactivate themselves," since only the Owner can ever reach that code
+   path at all. There is deliberately no "change an existing user's role"
+   operation anywhere in this slice — the simplest way to guarantee the
+   Owner's role can never change, and not something the approved plan
+   asked for.
+2. **Deactivation invalidates every session for that user, and every
+   session read rechecks the user is still active.** `loginService`
+   resolves "is there a current, genuinely usable session" through one
+   function, `resolveLiveSession`, on every single call — never a cached
+   field: it re-fetches the user from SQLite and requires `isActive`,
+   tearing down stale state immediately if not. Verified this is _not_
+   redundant with the explicit `sessionManager.invalidateAllForUser` call
+   `userManagementService` makes after a successful deactivation: the
+   first version of that test checked `loginService.getSessionState`,
+   which passed even with the explicit call removed (because
+   `resolveLiveSession`'s own independent recheck already produced the
+   same visible result) — a genuinely isolating test had to bypass
+   `loginService` entirely and check `sessionManager`'s raw session data
+   directly.
+3. **Every users/roles authorization check reads role codes fresh from
+   SQLite** — never `sessionManager`'s own cached `roleCodes` (set once at
+   login) — via the same `getFreshRoleCodesForUser` helper `loginService`
+   uses for `isOwner`. Verified by mutating `user_roles` directly (there is
+   no legitimate way to change a role once assigned) and confirming the
+   very next authorization check reflects it immediately.
+4. **User creation hashes outside SQLite, then revalidates immediately
+   before the transaction.** Mirrors Slice 8's `firstRunSetupService`
+   pattern exactly: validate → resolve caller + assert `users.manage`
+   (fresh) → `await hashPassword(...)` (a real ~300-800ms Argon2id
+   computation, outside any transaction) → re-resolve caller + re-assert
+   (fresh, again) → only then `runAppTransaction`. Verified directly with
+   a paused-hash test: deactivating the calling Owner while their own
+   `createAdditionalUser` hash is still in flight correctly rejects the
+   completion and writes no row.
+5. **Main-process idle locking is visible in the renderer via polling, not
+   a push event.** `AuthenticatedApp` polls `getSessionState()` on a fixed
+   interval (5s) — deliberately the same request/response `invoke` style
+   every existing IPC channel already uses, rather than introducing a
+   first push-event channel for this alone. `getSessionState` is a pure
+   read (`sessionManager.get`, never `.touch`); a separate renderer
+   activity listener calls `touchSession()`, explicitly throttled (10s)
+   independent of how often the underlying DOM events fire — verified with
+   a fake-timer test that the poll alone never touches the idle clock, and
+   a second test (reverting the polling `setInterval` entirely and
+   confirming the specific test then fails) that the poll is what actually
+   surfaces an autonomous main-process lock with zero user action.
+   `SessionState`'s `locked` variant always carries `displayName`, so the
+   lock screen never needs a second round-trip.
+6. **Explicit session lifecycle mechanics.** `login()` destroys any
+   existing `currentSessionId` before creating a new one — one-current-
+   session replacement, never two sessions simultaneously "current."
+   `resolveLiveSession` clears `currentSessionId` the moment
+   `sessionManager.get` reports hard-expiry (the existing, untouched 30-
+   minute `idleTimeoutMs` safety net), so that cleanup is visible to this
+   slice's own state, not silently ignored. `loginService.dispose()` calls
+   `clearInterval` on the idle-lock timer — wired into `main/index.ts`'s
+   `before-quit` handler and every test's teardown — and
+   `startIdleLockTimer` is idempotent (disposing any previous timer before
+   installing a new one), verified directly by spying on the global
+   `clearInterval`.
+
+**IPC surface.** Ten channels total, `login:*` (five: `attempt`,
+`get-session-state`, `unlock`, `logout`, `touch`) and `users:*`/`roles:*`
+(five: `list`, `create`, `deactivate`, `reactivate`,
+`list-assignable`). There is deliberately no `login:lock` channel — no
+manual "lock now" button is in this slice's scope, so locking stays a
+purely internal, main-process-timer-driven operation, one fewer renderer-
+invocable mutation. Every `users:*` mutation is re-authorized fresh,
+server-side, from live SQLite role data on every call — the preload layer
+itself carries no `isOwner` flag and grants nothing by itself, satisfying
+"enforced in the main process regardless of what the renderer shows" at
+the letter as well as the spirit.
+
+**Renderer.** `App.tsx`'s `setup_complete` branch now renders
+`AuthenticatedApp` (not the old placeholder shell directly), which owns
+its own small state machine — `logged_out` → `LoginScreen`, `locked` →
+`LockScreen` (only ever the signed-in user's name and a password field,
+never a way to switch accounts), `active` → `AuthenticatedShell` (a thin
+header — signed-in name, a Users & Roles link shown only when
+`isOwner`, a logout control — wrapping the still-unchanged Slice 1
+placeholder content and, when navigated to, `UsersAndRolesScreen`).
 
 ### Company profile & document numbering
 

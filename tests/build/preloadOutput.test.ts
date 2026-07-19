@@ -124,7 +124,7 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
       expect(exposedNamespace).toBe('ledgerpage')
     })
 
-    it('exposes exactly the approved app-info + Slice 8 setup API — the narrow surface is preserved exactly', () => {
+    it('exposes exactly the approved app-info + Slice 8/9 API — the narrow surface is preserved exactly', () => {
       expect(exposedApi ? Object.keys(exposedApi).sort() : []).toEqual(
         [
           'getAppInfo',
@@ -132,7 +132,17 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'prepareRecoveryKey',
           'confirmRecoveryKey',
           'cancelRecoveryKey',
-          'completeSetup'
+          'completeSetup',
+          'login',
+          'getSessionState',
+          'unlockSession',
+          'logout',
+          'touchSession',
+          'listUsers',
+          'createUser',
+          'deactivateUser',
+          'reactivateUser',
+          'listAssignableRoles'
         ].sort()
       )
     })

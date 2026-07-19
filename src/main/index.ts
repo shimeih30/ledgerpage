@@ -10,11 +10,16 @@ import { validateDevServerUrl } from './security/devServerUrl'
 import type { NavigationPolicyContext } from './security/navigationPolicy'
 import { registerAppInfoHandler } from './ipc/registerAppInfoHandler'
 import { registerSetupHandlers } from './ipc/registerSetupHandlers'
+import { registerLoginHandlers } from './ipc/registerLoginHandlers'
+import { registerUserManagementHandlers } from './ipc/registerUserManagementHandlers'
 import { initializeDatabase } from './db/initializeDatabase'
 import { resolveMigrationsFolder } from './db/resolveMigrationsFolder'
 import { showStartupErrorAndQuit } from './startup/showStartupError'
 import { initializeSingleInstanceLifecycle } from './lifecycle/singleInstance'
 import { createFirstRunSetupService } from './setup/firstRunSetupService'
+import { createSessionManager } from './auth/sessionManager'
+import { createLoginService, type LoginService } from './users/loginService'
+import { createUserManagementService } from './users/userManagementService'
 
 // The compiled main output is an ES module, where the CommonJS globals
 // __dirname/__filename do not exist. import.meta.dirname is the stable
@@ -50,6 +55,10 @@ let db: Database.Database | undefined
 // it to the foreground without creating a new one, and so it can never
 // point at a destroyed window (cleared on 'closed' below).
 let mainWindow: BrowserWindow | undefined
+
+// Set once created below, so before-quit can dispose its idle-lock timer
+// cleanly. Never accessed before app.whenReady() resolves, same as db.
+let loginService: LoginService | undefined
 
 function createMainWindow(): void {
   const preloadPath = join(mainDirname, '../preload/index.js')
@@ -108,6 +117,32 @@ if (isPrimaryInstance) {
     const setupService = createFirstRunSetupService()
     registerSetupHandlers({ context: navigationContext, db: drizzleDb, setupService })
 
+    // A single sessionManager instance, shared between loginService and
+    // userManagementService — sessionManager is the actual holder of
+    // session data (an in-memory Map, discarded on every restart, by
+    // design); loginService additionally tracks *which* one session is
+    // "the current one" (see loginService.ts's own doc comment), and
+    // userManagementService needs the same instance so a successful
+    // deactivation can invalidate every session belonging to that user,
+    // not just whichever session loginService currently considers
+    // active.
+    const sessionManager = createSessionManager()
+    loginService = createLoginService({ sessionManager })
+    const userManagementService = createUserManagementService({ loginService, sessionManager })
+
+    registerLoginHandlers({ context: navigationContext, db: drizzleDb, loginService })
+    registerUserManagementHandlers({
+      context: navigationContext,
+      db: drizzleDb,
+      userManagementService
+    })
+
+    // Idle-lock timer: started once here, for the app's lifetime, disposed
+    // in before-quit below. Locks (never destroys) the current session
+    // once idle past the threshold; sessionManager's own idleTimeoutMs
+    // remains a separate, longer, untouched hard-expiry safety net.
+    loginService.startIdleLockTimer(drizzleDb)
+
     // Applied globally (not just to the main window) so any future webContents
     // — including ones this slice doesn't yet know about — inherits the same
     // navigation and new-window restrictions by default.
@@ -131,6 +166,8 @@ if (isPrimaryInstance) {
     // later backup milestone.
     db?.close()
     db = undefined
+    loginService?.dispose()
+    loginService = undefined
   })
 
   app.on('window-all-closed', () => {

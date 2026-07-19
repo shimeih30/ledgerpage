@@ -15,6 +15,33 @@ import {
   type LedgerPageSetupApi,
   type PrepareRecoveryKeyResult
 } from '../shared/ipc/setup'
+import {
+  LOGIN_ATTEMPT_CHANNEL,
+  LOGIN_GET_SESSION_STATE_CHANNEL,
+  LOGIN_LOGOUT_CHANNEL,
+  LOGIN_TOUCH_CHANNEL,
+  LOGIN_UNLOCK_CHANNEL,
+  type LedgerPageLoginApi,
+  type LoginAttemptInput,
+  type LoginResult,
+  type SessionState,
+  type UnlockInput,
+  type UnlockResult
+} from '../shared/ipc/login'
+import {
+  ROLES_LIST_ASSIGNABLE_CHANNEL,
+  USERS_CREATE_CHANNEL,
+  USERS_DEACTIVATE_CHANNEL,
+  USERS_LIST_CHANNEL,
+  USERS_REACTIVATE_CHANNEL,
+  type CreateUserInput,
+  type CreateUserResult,
+  type LedgerPageUsersApi,
+  type ListAssignableRolesResult,
+  type ListUsersResult,
+  type MutateUserResult,
+  type UserIdInput
+} from '../shared/ipc/users'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -23,16 +50,25 @@ import {
  * real application capability (Slice 2).
  *
  * The five setup:* methods are Slice 8's narrow, immutable first-run
- * surface — nothing beyond these five operations, and nothing on any
- * of them beyond what src/shared/ipc/setup.ts's types describe.
+ * surface.
+ *
+ * The five login:* methods and the users/roles methods are Slice 9's
+ * narrow surface. No channel here accepts or returns a session id —
+ * every login/session operation implicitly targets whatever the main
+ * process considers "the current session"; the renderer never sees or
+ * supplies one. Every users/roles mutation is re-authorized fresh,
+ * server-side, from live SQLite role data on every call — this preload
+ * layer carries no isOwner flag of its own and grants nothing by
+ * itself.
+ *
  * Deliberately absent, on every one of these: a database handle,
  * arbitrary SQL, filesystem access, a password hash, a recovery hash,
- * role mutation, a general user-management API, raw session mutation,
- * or any way to invoke anything else in the main process. Do not add
- * additional keys here without updating LedgerPageApi/LedgerPageSetupApi
- * in src/shared/ipc/ and the corresponding tests.
+ * a session id, unrestricted role mutation (no channel can grant or
+ * remove the Owner role), or any way to invoke anything else in the
+ * main process. Do not add additional keys here without updating the
+ * corresponding shared/ipc source file and its tests.
  */
-const api: LedgerPageApi & LedgerPageSetupApi = {
+const api: LedgerPageApi & LedgerPageSetupApi & LedgerPageLoginApi & LedgerPageUsersApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -47,7 +83,33 @@ const api: LedgerPageApi & LedgerPageSetupApi = {
     ipcRenderer.invoke(SETUP_CANCEL_RECOVERY_KEY_CHANNEL, input),
 
   completeSetup: (input: CompleteSetupInput): Promise<CompleteSetupResult> =>
-    ipcRenderer.invoke(SETUP_COMPLETE_CHANNEL, input)
+    ipcRenderer.invoke(SETUP_COMPLETE_CHANNEL, input),
+
+  login: (input: LoginAttemptInput): Promise<LoginResult> =>
+    ipcRenderer.invoke(LOGIN_ATTEMPT_CHANNEL, input),
+
+  getSessionState: (): Promise<SessionState> => ipcRenderer.invoke(LOGIN_GET_SESSION_STATE_CHANNEL),
+
+  unlockSession: (input: UnlockInput): Promise<UnlockResult> =>
+    ipcRenderer.invoke(LOGIN_UNLOCK_CHANNEL, input),
+
+  logout: (): Promise<void> => ipcRenderer.invoke(LOGIN_LOGOUT_CHANNEL),
+
+  touchSession: (): Promise<void> => ipcRenderer.invoke(LOGIN_TOUCH_CHANNEL),
+
+  listUsers: (): Promise<ListUsersResult> => ipcRenderer.invoke(USERS_LIST_CHANNEL),
+
+  createUser: (input: CreateUserInput): Promise<CreateUserResult> =>
+    ipcRenderer.invoke(USERS_CREATE_CHANNEL, input),
+
+  deactivateUser: (input: UserIdInput): Promise<MutateUserResult> =>
+    ipcRenderer.invoke(USERS_DEACTIVATE_CHANNEL, input),
+
+  reactivateUser: (input: UserIdInput): Promise<MutateUserResult> =>
+    ipcRenderer.invoke(USERS_REACTIVATE_CHANNEL, input),
+
+  listAssignableRoles: (): Promise<ListAssignableRolesResult> =>
+    ipcRenderer.invoke(ROLES_LIST_ASSIGNABLE_CHANNEL)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)
