@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type Database from 'better-sqlite3'
+import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { app, BrowserWindow, session } from 'electron'
 import { createMainWindowOptions } from './window/mainWindowOptions'
 import { attachWindowSecurity } from './security/attachWindowSecurity'
@@ -8,10 +9,12 @@ import { configureContentSecurityPolicy } from './security/configureContentSecur
 import { validateDevServerUrl } from './security/devServerUrl'
 import type { NavigationPolicyContext } from './security/navigationPolicy'
 import { registerAppInfoHandler } from './ipc/registerAppInfoHandler'
+import { registerSetupHandlers } from './ipc/registerSetupHandlers'
 import { initializeDatabase } from './db/initializeDatabase'
 import { resolveMigrationsFolder } from './db/resolveMigrationsFolder'
 import { showStartupErrorAndQuit } from './startup/showStartupError'
 import { initializeSingleInstanceLifecycle } from './lifecycle/singleInstance'
+import { createFirstRunSetupService } from './setup/firstRunSetupService'
 
 // The compiled main output is an ES module, where the CommonJS globals
 // __dirname/__filename do not exist. import.meta.dirname is the stable
@@ -93,6 +96,17 @@ if (isPrimaryInstance) {
 
     configureContentSecurityPolicy(session.defaultSession, devServerUrl?.origin)
     registerAppInfoHandler(navigationContext)
+
+    // Drizzle-wrapped once here — every main-process service from
+    // Slice 5 onward is written against AppDb/AppTransaction, never the
+    // raw better-sqlite3 handle directly. The setup service owns its
+    // own RecoveryCeremonyService instance and the one bounded piece of
+    // pending-owner-id state described in firstRunSetupService.ts; both
+    // live only in memory, for this process's lifetime, exactly like
+    // every other in-memory Slice 7 service.
+    const drizzleDb = drizzle<Record<string, never>>(db)
+    const setupService = createFirstRunSetupService()
+    registerSetupHandlers({ context: navigationContext, db: drizzleDb, setupService })
 
     // Applied globally (not just to the main window) so any future webContents
     // — including ones this slice doesn't yet know about — inherits the same

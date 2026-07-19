@@ -64,8 +64,16 @@ export const ARGON2ID_PARAMETERS = {
   saltLength: 16 // bytes — the RFC-recommended minimum for Argon2
 } as const
 
-const MIN_PASSWORD_LENGTH = 8
-const MAX_PASSWORD_LENGTH = 256
+/**
+ * Exported so callers that need to validate a password's length before
+ * ever calling hashPassword — e.g. the renderer's inline form
+ * validation, or setup's IPC-layer revalidation — reference these exact
+ * values instead of duplicating "8"/"256" as disconnected magic
+ * numbers that could quietly drift out of sync with the real gate
+ * below.
+ */
+export const MIN_PASSWORD_LENGTH = 8
+export const MAX_PASSWORD_LENGTH = 256
 
 /**
  * A string known to have passed validatePasswordHashForStorage at least

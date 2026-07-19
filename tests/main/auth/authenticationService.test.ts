@@ -68,7 +68,7 @@ describe('authenticationService.authenticate', () => {
 
     expect(nonexistentResult).toEqual({ success: false })
     expect(wrongPasswordResult).toEqual({ success: false })
-  }, 20_000)
+  })
 
   it('an inactive user returns the same ordinary failure result as a wrong password', async () => {
     const user = getUserAuthRecordByLoginIdentifier(db, 'ben')!

@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 7
+## Current status: M1, Slice 8
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -19,17 +19,23 @@ Slice 4 added the first permanent reference-data tables. Slice 5 added the
 first company-owned tables — a database-and-service-enforced singleton
 company profile and document-numbering configuration. Slice 6 added tax
 configuration: company-scoped tax codes and their effective-dated rate
-history. Slice 7 adds authentication and authorization primitives —
+history. Slice 7 added authentication and authorization primitives —
 password hashing, users, roles, sessions, and an owner recovery-credential
-ceremony — with no renderer screens or IPC endpoints yet.
+ceremony — with no renderer screens or IPC endpoints yet. Slice 8 is where
+those primitives, plus Slice 5's company/numbering-rules tables, are
+actually put to use for the first time: a first-run setup wizard that
+creates the real company profile, the real numbering rules, and the
+application's one initial Owner account, atomically, with a mandatory
+one-time recovery-key ceremony — LedgerPage's first real renderer screens
+and IPC surface.
 
-**Intentionally absent at this stage:** any _seeded_ company, numbering,
-tax, or user data (the four fixed roles are the one exception — see
-below), authentication IPC, products, inventory, customers, suppliers,
-orders, recipes, production, expenses, accounts, exchange rates, unit
-conversions, any UI management screens, and any database or filesystem
-access exposed to the renderer. The only renderer-facing API remains the
-single `window.ledgerpage.getAppInfo()` call from Slice 2.
+**Intentionally absent at this stage:** multi-user management, a general
+login screen (that's Slice 9), role-management UI, password-reset UI,
+company-settings UI, products, inventory, customers, suppliers, orders,
+recipes, production, expenses, accounts, exchange rates, unit conversions,
+persistent sessions, audit logging, and any database or filesystem access
+exposed to the renderer beyond the six narrow, typed methods described
+below.
 
 ### Authentication foundations
 
@@ -235,6 +241,177 @@ A fourth pass closed four narrower edge cases:
     function-shaped thenable callback fell through to better-sqlite3's
     own internal guard instead, throwing a generic `TypeError` rather
     than the documented, controlled `AsyncTransactionCallbackError`.
+
+### First-run setup wizard
+
+The M1 implementation plan describes Slice 8 as the point where the real
+`company` row and the real `numbering_rules` rows are actually inserted —
+not Slice 5, despite Slice 5 introducing their tables. Confirmed directly
+from Slice 5/7's own doc comments (`companyService.createCompany`:
+"Intended for use by Slice 8's first-run transaction"; `numberingDefaults.ts`:
+"Slice 8's first-run transaction is what actually inserts these rows") before
+writing a line of this slice's code. First-run status is therefore
+determined by whether any `users` row exists — not by whether a `company`
+row exists — and the wizard's first two stages collect exactly the data
+that gets inserted atomically alongside the Owner at the end.
+
+**First-run detection (`firstRunStatusService.ts`).** One central,
+main-process-only function, computed fresh from durable database state on
+every call, never cached, never influenced by anything renderer-local:
+
+- `setup_required` — the setup-owned durable state is genuinely
+  **pristine**: zero `users`, zero `user_roles`, zero
+  `owner_recovery_credentials`, no `company` row, and zero
+  `numbering_rules` for the primary company. An earlier version of this
+  check treated "zero users" alone as sufficient, which silently treated
+  a partially-completed or corrupted setup attempt (a `company` row
+  inserted but the Owner-creation transaction never finished, for
+  instance) as an ordinary fresh start — exactly the kind of
+  silent-repair-by-omission this codebase's "fail closed, never
+  auto-repair" posture forbids. Reference-data rows and the four fixed
+  role seeds may already exist (they're seeded by ordinary startup, not
+  by setup) and never make this non-pristine.
+- `setup_complete` — the primary `company` exists, all 10 approved
+  `numbering_rules` rows exist, exactly one `role_owner` assignment
+  identifies the initial Owner, that Owner's user row exists, and that
+  Owner has exactly one active recovery credential. **Additional
+  non-Owner users are explicitly permitted** and never affect this — an
+  earlier version of this check treated any second `users` row as
+  inconsistent, which would have made every correctly-running
+  installation start reporting itself as broken the moment Slice 9 adds
+  its first ordinary user.
+- `inconsistent_state` — every other combination, fail-closed: a
+  non-pristine zero-user state (company and/or numbering rows already
+  present with no user to match — including a defensively-checked
+  "numbering rules with no company row" case, only reachable at all by
+  bypassing the numbering-to-company foreign key), no Owner assignment
+  once users exist, more than one Owner assignment, an Owner assignment
+  referencing a missing user, an orphaned `user_roles` or
+  `owner_recovery_credentials` row (checked defensively even though the
+  relevant foreign key already prevents both under normal operation), an
+  Owner with zero or more than one active recovery credential, or missing
+  company/numbering rows. Never auto-repaired anywhere in this codebase —
+  the renderer gets a fixed, generic "setup could not be verified"
+  screen, and the specific internal reason never crosses the IPC
+  boundary.
+
+**Owner-creation transaction (`firstRunSetupService.ts`).** One call to
+the approved `runAppTransaction`, synchronous throughout: creates the
+`company` row, all 10 `numbering_rules` rows, the Owner `users` row, its
+`role_owner` assignment, and commits the confirmed recovery credential —
+all four failing atomically together via SQLite's own transaction
+mechanics if any one write fails, verified directly by simulating a late
+failure and confirming zero partial rows remain. `hashPassword` (the one
+genuinely async step) runs before the transaction opens, never inside it.
+First-run status is checked twice — once before hashing, to avoid paying
+for an Argon2id computation needlessly, and once more inside the live
+transaction, which is what actually closes the race between two
+concurrent completion attempts (verified directly: two concurrent
+`completeSetup` calls with the same confirmed capability produce exactly
+one Owner, not zero, not two).
+
+The Owner's `users.id` has to be chosen _before_ the recovery ceremony is
+prepared — `RecoveryCeremonyService.prepareCeremony(userId)` binds a
+userId into its private state that `commitCredential` later uses as the
+credential row's foreign key, which can only insert successfully once a
+matching `users` row already exists. This required one small,
+backward-compatible extension to Slice 7's `userService.createUser`: an
+optional precomputed `id` field, defaulting to the previous random
+generation when omitted (every existing caller and test is unaffected).
+
+That id, its ceremony token, and (once confirmed) its commit token are
+bound together in exactly one bounded `ActiveAttempt` object — not a
+per-request map, not ever exposed to the renderer. Two earlier versions of
+this design left narrower gaps, both since closed:
+
+- **Ownership is decided synchronously**, via a monotonically increasing
+  generation counter bumped the instant `prepareRecoveryKey()` is called —
+  before its one `await` — so which of several concurrently-resolving
+  preparations is "the real one" has a deterministic answer regardless of
+  which finishes its own async work (a real Argon2id hash) first; verified
+  directly with two preparations resolved in reversed call order, leaving
+  only the later call active either way.
+- **Supersession is immediate, not deferred until the new preparation
+  resolves.** The moment a new `prepareRecoveryKey()` call begins, the
+  previous `activeAttempt` is cleared and its ceremony cancelled
+  synchronously — verified directly (via a spy) that this cancellation
+  happens before the new preparation's own async work has even completed,
+  not only by the time the whole call finishes. An earlier version left
+  the previous attempt fully usable for the entire duration of the new
+  one's async preparation, a real window (one real Argon2id hash,
+  ~300-800ms) during which the stale attempt could otherwise still
+  confirm or complete. If the new preparation itself fails, nothing is
+  restored — there is no active attempt at all until a fresh prepare
+  succeeds. A stale preparation result (superseded while its own async
+  work was in flight) is cancelled and returns `{ success: false }` —
+  never a ceremonyToken/plaintextRecoveryKey pair that looks usable but
+  already isn't.
+- **`completeSetup` revalidates ownership a second time, after hashing.**
+  generation, ownerId, ceremonyToken, and commitToken are all captured
+  before the one genuinely async step (`hashPassword`, another real
+  Argon2id computation) and re-checked against the live `activeAttempt`
+  the instant it resolves — since `runAppTransaction` itself is fully
+  synchronous, that same check is also "immediately before the
+  transaction begins," with no further gap for anything to change in
+  between. An earlier version captured ownerId before hashing but never
+  re-checked it afterward, so a `prepareRecoveryKey()` call arriving
+  during the hash could supersede the in-flight completion without it
+  ever noticing. The `afterCommit` cleanup itself only clears
+  `activeAttempt` if its generation still matches the attempt that
+  actually committed.
+- **The generation field is an enforced invariant on every gate**
+  (`confirmRecoveryKey`, `cancelRecoveryKey`, `completeSetup`), checked
+  explicitly alongside token equality, not inferred from it.
+
+`confirmRecoveryKey` only ever accepts the current attempt's ceremony
+token; `cancelRecoveryKey` clears state only when its token matches the
+current attempt (cancelling a superseded token is a safe no-op, never
+disturbing whatever has since become active); and `completeSetup` only
+ever accepts the commit token bound to the current attempt, rejected
+before any hashing or transaction if it doesn't match — which is what
+makes "a stale commit token can create the wrong user or hit a
+foreign-key failure" structurally impossible rather than merely unlikely.
+The active attempt is cleared only once a commit truly succeeds (via
+`runAppTransaction`'s `afterCommit`), so a rolled-back attempt remains
+valid and retryable with the exact same commit token.
+
+**IPC surface (`src/shared/ipc/setup.ts`, `registerSetupHandlers.ts`).**
+Five channels, all under `setup:`, added to the preload bridge alongside
+Slice 2's `getAppInfo`: `get-status`, `prepare-recovery-key`,
+`confirm-recovery-key`, `cancel-recovery-key`, `complete`. Every handler
+re-validates the sender frame and its own input shape independently of
+whatever the renderer already checked; `prepare-recovery-key` and
+`confirm-recovery-key` additionally re-check first-run status before doing
+anything (`cancel-recovery-key` deliberately does not — cancelling an
+in-memory ceremony is harmless in every database state). Errors crossing
+this boundary are always one of four fixed codes
+(`setup_already_complete` / `invalid_input` / `recovery_confirmation_invalid`
+/ `unexpected_error`) — never a raw exception message, matching this
+codebase's established defense-in-depth posture for every other trust
+boundary.
+
+**Renderer (`src/renderer/src/setup/`).** `App.tsx` asks the main process
+for first-run status on mount and renders exactly one of three things: the
+setup wizard, the existing Slice 1 shell (only once `setup_complete`), or
+a plain `InconsistentStateScreen` with no developer/database terminology
+— a failed status check is treated the same as `inconsistent_state`,
+failing closed rather than guessing. The wizard itself is six stages
+(company details, currency confirmation, Owner account, recovery-key
+display, recovery-key confirmation, completion) driven by plain React
+state in one `SetupWizard` component — no new state-management dependency.
+Currency confirmation is a read-only confirmation that USD is the
+functional currency (a frozen architectural decision, now exported as
+`FUNCTIONAL_CURRENCY_ID`), not a picker among the other seeded reference
+currencies. The recovery key's plaintext exists in renderer state only
+between preparation and the moment the person checks "I have saved this
+key" — discarded from state at that exact point, never written to
+`localStorage`/`sessionStorage`/the URL/the console, and re-entry is
+verified server-side only, never by a client-side string comparison
+(confirmed directly against a real, unmocked Electron renderer: the
+plaintext is genuinely absent from the DOM by the confirmation stage, not
+merely hidden). Setup ends on a completion screen confirming success —
+deliberately no automatic session or login, since the plan's own flow ends
+at "completion" and ordinary login/navigation belongs to Slice 9.
 
 ### Company profile & document numbering
 

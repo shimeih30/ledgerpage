@@ -124,8 +124,17 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
       expect(exposedNamespace).toBe('ledgerpage')
     })
 
-    it('exposes exactly one method: getAppInfo — the narrow API is preserved exactly', () => {
-      expect(exposedApi ? Object.keys(exposedApi) : []).toEqual(['getAppInfo'])
+    it('exposes exactly the approved app-info + Slice 8 setup API — the narrow surface is preserved exactly', () => {
+      expect(exposedApi ? Object.keys(exposedApi).sort() : []).toEqual(
+        [
+          'getAppInfo',
+          'getFirstRunStatus',
+          'prepareRecoveryKey',
+          'confirmRecoveryKey',
+          'cancelRecoveryKey',
+          'completeSetup'
+        ].sort()
+      )
     })
 
     it('getAppInfo invokes exactly the app-info channel', async () => {

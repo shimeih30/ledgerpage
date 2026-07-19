@@ -58,6 +58,20 @@ export interface CreateUserInput {
   loginIdentifier: string
   displayName: string
   passwordHash: string
+  /**
+   * Optional precomputed id, in the same `user_${randomUUID()}` shape
+   * this function generates by default. Exists specifically for
+   * Slice 8's first-run setup: RecoveryCeremonyService.prepareCeremony
+   * binds a userId into its private ceremony state *before* the user
+   * row can be created (the recovery credential that
+   * commitCredential later inserts references that same id via a
+   * foreign key), so the caller needs to choose the id up front and
+   * supply it here rather than receiving a fresh random one at
+   * creation time. Omit this for every ordinary call — every existing
+   * caller and test continues to get the previous random-generation
+   * behavior unchanged.
+   */
+  id?: string
 }
 
 function requireCompanyExists(db: AppDb): void {
@@ -161,7 +175,15 @@ export function createUser(
     )
   }
 
-  const id = `user_${randomUUID()}`
+  let id: string
+  if (input.id !== undefined) {
+    if (typeof input.id !== 'string' || input.id.length === 0) {
+      throw new UserServiceError('id, when supplied, must be a non-empty string')
+    }
+    id = input.id
+  } else {
+    id = `user_${randomUUID()}`
+  }
 
   tx.insert(users)
     .values({
