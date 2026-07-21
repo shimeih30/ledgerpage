@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { UsersAndRolesScreen } from '../users/UsersAndRolesScreen'
+import { AuditLogScreen } from '../audit/AuditLogScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -8,16 +9,18 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users'
+type View = 'home' | 'users' | 'audit'
 
 /**
  * The authenticated application area. The "Users & Roles" link is
- * rendered only when `session.isOwner` is true — a purely cosmetic
- * convenience, not a security boundary: the actual enforcement lives
- * entirely in the main process (userManagementService's own fresh,
- * SQLite-sourced authorization check on every users/roles call),
- * exactly per the acceptance criterion that a non-Owner must be
- * blocked there regardless of what this renderer shows or hides.
+ * rendered only when `session.isOwner` is true, and the "Audit Log"
+ * link only when `session.canViewAuditLog` is true — both purely
+ * cosmetic conveniences, not security boundaries: the actual
+ * enforcement lives entirely in the main process (userManagementService
+ * and requireAuthorizedCaller's own fresh, SQLite-sourced authorization
+ * checks on every call), exactly per the acceptance criterion that an
+ * unauthorized caller must be blocked there regardless of what this
+ * renderer shows or hides.
  */
 export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellProps) {
   const [view, setView] = useState<View>('home')
@@ -80,6 +83,23 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Users &amp; Roles
             </button>
           )}
+          {session.canViewAuditLog && (
+            <button
+              type="button"
+              onClick={() => setView('audit')}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'audit' ? 700 : 500
+              }}
+            >
+              Audit Log
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -98,9 +118,9 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
         </div>
       </header>
 
-      {view === 'users' ? (
-        <UsersAndRolesScreen />
-      ) : (
+      {view === 'users' && <UsersAndRolesScreen />}
+      {view === 'audit' && <AuditLogScreen />}
+      {view === 'home' && (
         <main
           style={{
             display: 'flex',

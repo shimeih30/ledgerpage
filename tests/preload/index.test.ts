@@ -26,7 +26,8 @@ const EXPECTED_KEYS = [
   'createUser',
   'deactivateUser',
   'reactivateUser',
-  'listAssignableRoles'
+  'listAssignableRoles',
+  'listAuditEntries'
 ]
 
 describe('preload API surface', () => {
@@ -43,7 +44,7 @@ describe('preload API surface', () => {
     expect(exposeInMainWorld.mock.calls[0][0]).toBe('ledgerpage')
   })
 
-  it('exposes exactly getAppInfo plus the Slice 8 setup and Slice 9 login/users methods, no others', async () => {
+  it('exposes exactly getAppInfo plus the Slice 8 setup, Slice 9 login/users, and Slice 10 audit methods, no others', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -252,5 +253,18 @@ describe('preload API surface', () => {
 
     expect(invoke).toHaveBeenCalledTimes(1)
     expect(invoke).toHaveBeenCalledWith(ROLES_LIST_ASSIGNABLE_CHANNEL)
+  })
+
+  it('listAuditEntries forwards its input to the audit:list channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { AUDIT_LIST_CHANNEL } = await import('../../src/shared/ipc/audit')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listAuditEntries: (input: unknown) => Promise<unknown>
+    }
+    const input = { entityType: 'user', limit: 25 }
+    await api.listAuditEntries(input)
+
+    expect(invoke).toHaveBeenCalledWith(AUDIT_LIST_CHANNEL, input)
   })
 })

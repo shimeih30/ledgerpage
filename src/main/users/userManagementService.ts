@@ -5,6 +5,7 @@ import { hashPassword, type PasswordHash } from '../auth/passwordHashing'
 import { createUser, UserServiceError, deactivateUser, reactivateUser } from '../auth/userService'
 import { runAppTransaction } from '../db/appTransaction'
 import { PRIMARY_COMPANY_ID, userRoles, users } from '../db/schema'
+import { record, type AuditActor } from '../audit/auditService'
 import { getFreshRoleCodesForUser, hasOwnerRole } from './roleCodes'
 import type { LoginService } from './loginService'
 import type { SessionManager } from '../auth/sessionManager'
@@ -266,14 +267,56 @@ export function createUserManagementService(
             { loginIdentifier: normalizedLoginIdentifier, displayName, passwordHash },
             writeTime
           )
+
+          // Actor is the authorized caller (callerUserIdBeforeHash ===
+          // secondCheck.callerUserId, verified identical above) — never
+          // the newly-created target user. "Who did this" is always the
+          // Owner who initiated it.
+          const actor: AuditActor = { type: 'user', userId: callerUserIdBeforeHash }
+
+          record(
+            context.tx,
+            {
+              entityType: 'user',
+              entityId: created.id,
+              entityLabel: created.displayName,
+              action: 'create',
+              actor,
+              companyId: PRIMARY_COMPANY_ID,
+              before: null,
+              after: {
+                loginIdentifier: created.loginIdentifier,
+                displayName: created.displayName,
+                isActive: created.isActive
+              }
+            },
+            writeTime
+          )
+
+          const roleId = NON_OWNER_ROLE_ID_BY_CODE[roleCode]
           context.tx
             .insert(userRoles)
             .values({
               userId: created.id,
-              roleId: NON_OWNER_ROLE_ID_BY_CODE[roleCode],
+              roleId,
               createdAt: writeTime
             })
             .run()
+
+          record(
+            context.tx,
+            {
+              entityType: 'user_role',
+              entityId: `${created.id}:${roleId}`,
+              entityLabel: `${created.displayName} \u2192 ${roleCode}`,
+              action: 'create',
+              actor,
+              companyId: PRIMARY_COMPANY_ID,
+              before: null,
+              after: { userId: created.id, roleId }
+            },
+            writeTime
+          )
         })
       } catch (error) {
         if (error instanceof UserServiceError) {
@@ -303,19 +346,49 @@ export function createUserManagementService(
         return { success: false, errorCode: 'cannot_modify_owner' }
       }
 
-      try {
-        deactivateUser(db, targetUserId, now())
-      } catch {
+      const existingBefore = db
+        .select({ isActive: users.isActive, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .get()
+      if (!existingBefore) {
         return { success: false, errorCode: 'unexpected_error' }
       }
 
-      // Safe to invalidate now — deactivateUser is a single,
-      // non-transactional UPDATE that auto-commits immediately in
-      // SQLite (verified directly before relying on this), so by this
-      // line the deactivation is already durable. No afterCommit
-      // machinery is needed for a single-statement write like this
-      // one, unlike Slice 8's multi-table Owner-creation transaction.
-      sessionManager.invalidateAllForUser(targetUserId)
+      try {
+        runAppTransaction(db, (context) => {
+          const writeTime = now()
+          deactivateUser(context.tx, targetUserId, writeTime)
+
+          record(
+            context.tx,
+            {
+              entityType: 'user',
+              entityId: targetUserId,
+              entityLabel: existingBefore.displayName,
+              action: 'deactivate',
+              actor: { type: 'user', userId: check.callerUserId },
+              companyId: PRIMARY_COMPANY_ID,
+              before: { isActive: existingBefore.isActive },
+              after: { isActive: false }
+            },
+            writeTime
+          )
+
+          // Moved into afterCommit now that this write is
+          // transaction-wrapped (needed so the audit row can share the
+          // same transaction as the deactivation) — only runs once the
+          // transaction has truly committed, preserving the exact same
+          // "never invalidate a session for a deactivation that didn't
+          // actually durably happen" guarantee the single-autocommitting-
+          // statement version relied on implicitly.
+          context.afterCommit(() => {
+            sessionManager.invalidateAllForUser(targetUserId)
+          })
+        })
+      } catch {
+        return { success: false, errorCode: 'unexpected_error' }
+      }
 
       return { success: true }
     },
@@ -326,8 +399,35 @@ export function createUserManagementService(
         return { success: false, errorCode: check.errorCode }
       }
 
+      const existingBefore = db
+        .select({ isActive: users.isActive, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, targetUserId))
+        .get()
+      if (!existingBefore) {
+        return { success: false, errorCode: 'unexpected_error' }
+      }
+
       try {
-        reactivateUser(db, targetUserId, now())
+        db.transaction((tx) => {
+          const writeTime = now()
+          reactivateUser(tx, targetUserId, writeTime)
+
+          record(
+            tx,
+            {
+              entityType: 'user',
+              entityId: targetUserId,
+              entityLabel: existingBefore.displayName,
+              action: 'reactivate',
+              actor: { type: 'user', userId: check.callerUserId },
+              companyId: PRIMARY_COMPANY_ID,
+              before: { isActive: existingBefore.isActive },
+              after: { isActive: true }
+            },
+            writeTime
+          )
+        })
       } catch {
         return { success: false, errorCode: 'unexpected_error' }
       }

@@ -59,7 +59,8 @@ function installMockApi(overrides: {
         { code: 'operations', name: 'Operations' },
         { code: 'finance', name: 'Finance' }
       ]
-    })
+    }),
+    listAuditEntries: vi.fn()
   }
 }
 

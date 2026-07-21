@@ -12,6 +12,7 @@ import {
   requireTrimmedTaxName,
   TaxValidationError
 } from './validation/taxValidation'
+import { record, type AuditActor } from '../audit/auditService'
 import type { AppDb, AppTransaction } from './dbTypes'
 
 export class TaxConfigurationError extends Error {
@@ -130,6 +131,7 @@ export function getTaxCodeByCode(db: AppDb, code: string): TaxCode | undefined {
 export function createTaxCode(
   db: AppDb,
   input: CreateTaxCodeInput,
+  actor: AuditActor,
   now: Date = new Date()
 ): TaxCode {
   requireCompanyExists(db)
@@ -147,19 +149,47 @@ export function createTaxCode(
 
   const id = `tax_code_${randomUUID()}`
 
-  db.insert(taxCodes)
-    .values({
-      id,
-      companyId: PRIMARY_COMPANY_ID,
-      code: normalizedCode,
-      name,
-      category,
-      description: input.description ?? null,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now
-    })
-    .run()
+  // Wrapped in its own transaction (nested safely via savepoint if `db`
+  // is already a transaction, verified empirically before this design
+  // was relied on) so the insert and its audit row are atomic together
+  // — an audit-write failure rolls back this insert too, never leaving
+  // one without the other.
+  db.transaction((tx) => {
+    tx.insert(taxCodes)
+      .values({
+        id,
+        companyId: PRIMARY_COMPANY_ID,
+        code: normalizedCode,
+        name,
+        category,
+        description: input.description ?? null,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now
+      })
+      .run()
+
+    record(
+      tx,
+      {
+        entityType: 'tax_code',
+        entityId: id,
+        entityLabel: normalizedCode,
+        action: 'create',
+        actor,
+        companyId: PRIMARY_COMPANY_ID,
+        before: null,
+        after: {
+          code: normalizedCode,
+          name,
+          category,
+          description: input.description ?? null,
+          isActive: true
+        }
+      },
+      now
+    )
+  })
 
   const created = getTaxCodeById(db, id)
   if (!created) {
@@ -186,6 +216,7 @@ export function updateTaxCode(
   tx: AppTransaction,
   id: string,
   input: UpdateTaxCodeInput,
+  actor: AuditActor,
   now: Date = new Date()
 ): TaxCode {
   const existing = getTaxCodeById(tx, id)
@@ -231,27 +262,84 @@ export function updateTaxCode(
   if (!updated) {
     throw new TaxConfigurationError('Tax code disappeared during update')
   }
+
+  record(
+    tx,
+    {
+      entityType: 'tax_code',
+      entityId: id,
+      entityLabel: updated.code,
+      action: 'update',
+      actor,
+      companyId: PRIMARY_COMPANY_ID,
+      before: {
+        name: existing.name,
+        description: existing.description,
+        category: existing.category
+      },
+      after: {
+        name: updated.name,
+        description: updated.description,
+        category: updated.category
+      }
+    },
+    now
+  )
+
   return updated
 }
 
-export function deactivateTaxCode(db: AppDb, id: string, now: Date = new Date()): TaxCode {
-  return setActiveState(db, id, false, now)
+export function deactivateTaxCode(
+  db: AppDb,
+  id: string,
+  actor: AuditActor,
+  now: Date = new Date()
+): TaxCode {
+  return setActiveState(db, id, false, actor, now)
 }
 
-export function reactivateTaxCode(db: AppDb, id: string, now: Date = new Date()): TaxCode {
-  return setActiveState(db, id, true, now)
+export function reactivateTaxCode(
+  db: AppDb,
+  id: string,
+  actor: AuditActor,
+  now: Date = new Date()
+): TaxCode {
+  return setActiveState(db, id, true, actor, now)
 }
 
-function setActiveState(db: AppDb, id: string, isActive: boolean, now: Date): TaxCode {
+function setActiveState(
+  db: AppDb,
+  id: string,
+  isActive: boolean,
+  actor: AuditActor,
+  now: Date
+): TaxCode {
   const existing = getTaxCodeById(db, id)
   if (!existing) {
     throw new TaxConfigurationError(`No tax code exists with id "${id}"`)
   }
 
-  db.update(taxCodes)
-    .set({ isActive, updatedAt: now })
-    .where(and(eq(taxCodes.companyId, PRIMARY_COMPANY_ID), eq(taxCodes.id, id)))
-    .run()
+  db.transaction((tx) => {
+    tx.update(taxCodes)
+      .set({ isActive, updatedAt: now })
+      .where(and(eq(taxCodes.companyId, PRIMARY_COMPANY_ID), eq(taxCodes.id, id)))
+      .run()
+
+    record(
+      tx,
+      {
+        entityType: 'tax_code',
+        entityId: id,
+        entityLabel: existing.code,
+        action: isActive ? 'reactivate' : 'deactivate',
+        actor,
+        companyId: PRIMARY_COMPANY_ID,
+        before: { isActive: existing.isActive },
+        after: { isActive }
+      },
+      now
+    )
+  })
 
   const updated = getTaxCodeById(db, id)
   if (!updated) {

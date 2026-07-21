@@ -12,6 +12,7 @@ import { registerAppInfoHandler } from './ipc/registerAppInfoHandler'
 import { registerSetupHandlers } from './ipc/registerSetupHandlers'
 import { registerLoginHandlers } from './ipc/registerLoginHandlers'
 import { registerUserManagementHandlers } from './ipc/registerUserManagementHandlers'
+import { registerAuditHandlers } from './ipc/registerAuditHandlers'
 import { initializeDatabase } from './db/initializeDatabase'
 import { resolveMigrationsFolder } from './db/resolveMigrationsFolder'
 import { showStartupErrorAndQuit } from './startup/showStartupError'
@@ -136,6 +137,12 @@ if (isPrimaryInstance) {
       db: drizzleDb,
       userManagementService
     })
+    // Reuses the exact loginService instance above — no second session
+    // manager, no separate authorization path. audit:list's own
+    // authorization (via requireAuthorizedCaller, inside
+    // registerAuditHandlers.ts) is entirely independent of anything the
+    // renderer supplies, including session.canViewAuditLog.
+    registerAuditHandlers({ context: navigationContext, db: drizzleDb, loginService })
 
     // Idle-lock timer: started once here, for the app's lifetime, disposed
     // in before-quit below. Locks (never destroys) the current session

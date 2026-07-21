@@ -15,6 +15,7 @@ import {
 } from '../auth/recoveryCeremonyService'
 import { APPROVED_NUMBERING_DEFAULTS, numberingRuleId } from '../db/numberingDefaults'
 import { getFirstRunStatus } from './firstRunStatusService'
+import { record } from '../audit/auditService'
 import type { AppDb } from '../db/dbTypes'
 
 const OWNER_ROLE_ID = 'role_owner'
@@ -356,18 +357,40 @@ export function createFirstRunSetupService(
           }
 
           const writeTime = now()
+          const SETUP_ACTOR = { type: 'system' } as const
 
-          createCompany(
+          const createdCompany = createCompany(
             context.tx,
             { ...companyInput, currencyId: FUNCTIONAL_CURRENCY_ID },
             writeTime
           )
 
+          record(
+            context.tx,
+            {
+              entityType: 'company',
+              entityId: createdCompany.id,
+              entityLabel: createdCompany.name,
+              action: 'create',
+              actor: SETUP_ACTOR,
+              companyId: createdCompany.id,
+              before: null,
+              after: {
+                name: createdCompany.name,
+                address: createdCompany.address,
+                contactDetails: createdCompany.contactDetails,
+                currencyId: createdCompany.currencyId
+              }
+            },
+            writeTime
+          )
+
           for (const numberingDefault of APPROVED_NUMBERING_DEFAULTS) {
+            const numberingRuleIdValue = numberingRuleId(numberingDefault.documentTypeKey)
             context.tx
               .insert(numberingRules)
               .values({
-                id: numberingRuleId(numberingDefault.documentTypeKey),
+                id: numberingRuleIdValue,
                 companyId: PRIMARY_COMPANY_ID,
                 documentTypeKey: numberingDefault.documentTypeKey,
                 prefix: numberingDefault.prefix,
@@ -379,9 +402,29 @@ export function createFirstRunSetupService(
                 updatedAt: writeTime
               })
               .run()
+
+            record(
+              context.tx,
+              {
+                entityType: 'numbering_rule',
+                entityId: numberingRuleIdValue,
+                entityLabel: `${numberingDefault.documentTypeKey} (${numberingDefault.prefix})`,
+                action: 'create',
+                actor: SETUP_ACTOR,
+                companyId: PRIMARY_COMPANY_ID,
+                before: null,
+                after: {
+                  documentTypeKey: numberingDefault.documentTypeKey,
+                  prefix: numberingDefault.prefix,
+                  paddingLength: numberingDefault.paddingLength,
+                  resetBehavior: numberingDefault.resetBehavior
+                }
+              },
+              writeTime
+            )
           }
 
-          createUser(
+          const createdOwner = createUser(
             context.tx,
             {
               id: capturedOwnerId,
@@ -392,10 +435,44 @@ export function createFirstRunSetupService(
             writeTime
           )
 
+          record(
+            context.tx,
+            {
+              entityType: 'user',
+              entityId: createdOwner.id,
+              entityLabel: createdOwner.displayName,
+              action: 'create',
+              actor: SETUP_ACTOR,
+              companyId: PRIMARY_COMPANY_ID,
+              before: null,
+              after: {
+                loginIdentifier: createdOwner.loginIdentifier,
+                displayName: createdOwner.displayName,
+                isActive: createdOwner.isActive
+              }
+            },
+            writeTime
+          )
+
           context.tx
             .insert(userRoles)
             .values({ userId: capturedOwnerId, roleId: OWNER_ROLE_ID, createdAt: writeTime })
             .run()
+
+          record(
+            context.tx,
+            {
+              entityType: 'user_role',
+              entityId: `${capturedOwnerId}:${OWNER_ROLE_ID}`,
+              entityLabel: `${createdOwner.displayName} \u2192 Owner`,
+              action: 'create',
+              actor: SETUP_ACTOR,
+              companyId: PRIMARY_COMPANY_ID,
+              before: null,
+              after: { userId: capturedOwnerId, roleId: OWNER_ROLE_ID }
+            },
+            writeTime
+          )
 
           // Binds the recovery credential to `capturedOwnerId` via
           // commitToken's own private state — if that private state's
@@ -405,7 +482,36 @@ export function createFirstRunSetupService(
           // database's own foreign-key constraint would reject the
           // insert and roll back this entire transaction rather than
           // silently associating the credential with the wrong user.
-          recoveryCeremonyService.commitCredential(context, capturedCommitToken, writeTime)
+          const createdCredential = recoveryCeremonyService.commitCredential(
+            context,
+            capturedCommitToken,
+            writeTime
+          )
+
+          // Only safe metadata is ever placed into the object passed to
+          // record() below — id, userId, version, isActive, createdAt —
+          // sourced directly from commitCredential's own return type
+          // (OwnerRecoveryCredentialSummary), which itself never
+          // exposes recoveryKeyHash. This isn't relying on redaction to
+          // catch a hash that was never here to begin with.
+          record(
+            context.tx,
+            {
+              entityType: 'owner_recovery_credential',
+              entityId: createdCredential.id,
+              entityLabel: `Recovery credential v${createdCredential.version}`,
+              action: 'create',
+              actor: SETUP_ACTOR,
+              companyId: PRIMARY_COMPANY_ID,
+              before: null,
+              after: {
+                userId: createdCredential.userId,
+                version: createdCredential.version,
+                isActive: createdCredential.isActive
+              }
+            },
+            writeTime
+          )
 
           // Cleared only once the transaction has truly committed, and
           // only if activeAttempt is still the *exact* attempt that

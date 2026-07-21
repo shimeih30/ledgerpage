@@ -115,6 +115,51 @@ describe('firstRunSetupService', () => {
       expect(credentialRows[0].isActive).toBe(true)
     }, 20000)
 
+    it('produces exactly 14 audit rows: company, 10 numbering rules, owner user, owner role, recovery credential', async () => {
+      const service = createFirstRunSetupService()
+      const commitToken = await prepareAndConfirm(service)
+
+      await service.completeSetup(db, VALID_COMPANY, VALID_OWNER, commitToken)
+
+      const rows = rawDb
+        .prepare(
+          'SELECT entity_type as entityType, action, actor_type as actorType FROM audit_log_entries'
+        )
+        .all() as { entityType: string; action: string; actorType: string }[]
+
+      expect(rows).toHaveLength(14)
+      expect(rows.every((r) => r.action === 'create')).toBe(true)
+      expect(rows.every((r) => r.actorType === 'system')).toBe(true)
+
+      const countsByType = rows.reduce<Record<string, number>>((acc, r) => {
+        acc[r.entityType] = (acc[r.entityType] ?? 0) + 1
+        return acc
+      }, {})
+      expect(countsByType).toEqual({
+        company: 1,
+        numbering_rule: 10,
+        user: 1,
+        user_role: 1,
+        owner_recovery_credential: 1
+      })
+    }, 20000)
+
+    it('the recovery credential audit entry never includes the stored hash, even redacted', async () => {
+      const service = createFirstRunSetupService()
+      const commitToken = await prepareAndConfirm(service)
+      await service.completeSetup(db, VALID_COMPANY, VALID_OWNER, commitToken)
+
+      const credentialRow = rawDb
+        .prepare(
+          "SELECT changed_fields as changedFields FROM audit_log_entries WHERE entity_type = 'owner_recovery_credential'"
+        )
+        .get() as { changedFields: string }
+
+      const changed = JSON.parse(credentialRow.changedFields)
+      expect(Object.keys(changed).sort()).toEqual(['isActive', 'userId', 'version'].sort())
+      expect(JSON.stringify(changed)).not.toMatch(/\$argon2id\$/)
+    }, 20000)
+
     it('all 10 approved numbering-rule rows exist with current_sequence_value = 0 and the correct definitions', async () => {
       const service = createFirstRunSetupService()
       const commitToken = await prepareAndConfirm(service)
@@ -192,6 +237,12 @@ describe('firstRunSetupService', () => {
       expect(db.select().from(userRoles).all()).toHaveLength(0)
       expect(db.select().from(ownerRecoveryCredentials).all()).toHaveLength(0)
       expect(getFirstRunStatus(db)).toEqual({ status: 'setup_required' })
+      // Slice 10: the audit rows for company/numbering/user/role that
+      // would otherwise have been written earlier in this same
+      // transaction are rolled back too — none of them survive a later
+      // failure in the same transaction, confirming atomicity end to
+      // end, not just for the business tables checked above.
+      expect(rawDb.prepare('SELECT COUNT(*) as c FROM audit_log_entries').get()).toEqual({ c: 0 })
     }, 20000)
 
     it('killing the app mid-wizard (never calling completeSetup) leaves no partial row, and relaunch restarts cleanly', async () => {

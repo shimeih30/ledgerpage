@@ -142,7 +142,8 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'createUser',
           'deactivateUser',
           'reactivateUser',
-          'listAssignableRoles'
+          'listAssignableRoles',
+          'listAuditEntries'
         ].sort()
       )
     })

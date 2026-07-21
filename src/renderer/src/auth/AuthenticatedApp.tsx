@@ -23,7 +23,11 @@ function toAuthAppState(sessionState: SessionState): AuthAppState {
   }
   return {
     kind: 'active',
-    session: { displayName: sessionState.displayName, isOwner: sessionState.isOwner }
+    session: {
+      displayName: sessionState.displayName,
+      isOwner: sessionState.isOwner,
+      canViewAuditLog: sessionState.canViewAuditLog
+    }
   }
 }
 

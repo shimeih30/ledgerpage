@@ -27,6 +27,14 @@ export interface LoginAttemptInput {
 export interface SafeSessionInfo {
   displayName: string
   isOwner: boolean
+  /**
+   * Cosmetic-only, matching isOwner's own posture exactly — decides
+   * whether the renderer shows an Audit Log nav link, nothing more.
+   * The real boundary is audit:list's own requireAuthorizedCaller
+   * check (see registerAuditHandlers.ts), which reads role codes fresh
+   * from SQLite on every call, entirely independent of this value.
+   */
+  canViewAuditLog: boolean
 }
 
 export type LoginResult = { success: true; session: SafeSessionInfo } | { success: false }
@@ -39,7 +47,7 @@ export type LoginResult = { success: true; session: SafeSessionInfo } | { succes
 export type SessionState =
   | { state: 'logged_out' }
   | { state: 'locked'; displayName: string }
-  | { state: 'active'; displayName: string; isOwner: boolean }
+  | { state: 'active'; displayName: string; isOwner: boolean; canViewAuditLog: boolean }
 
 export interface UnlockInput {
   password: string

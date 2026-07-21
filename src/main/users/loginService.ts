@@ -1,5 +1,6 @@
 import { authenticate } from '../auth/authenticationService'
 import { getUserById, type SafeUser } from '../auth/userService'
+import { can } from '../auth/authorizationService'
 import type { SessionManager } from '../auth/sessionManager'
 import { getFreshRoleCodesForUser, hasOwnerRole } from './roleCodes'
 import type { AppDb } from '../db/dbTypes'
@@ -7,6 +8,17 @@ import type { AppDb } from '../db/dbTypes'
 export interface SafeSessionInfo {
   displayName: string
   isOwner: boolean
+  /**
+   * Cosmetic-only, matching isOwner's existing precedent exactly — this
+   * flag decides whether the renderer *shows* an Audit Log nav link,
+   * nothing more. The real boundary is the audit:list IPC handler's own
+   * requireAuthorizedCaller('audit.read') check, which reads role codes
+   * fresh from SQLite on every call, completely independent of this
+   * value. A renderer that somehow showed the link to an unauthorized
+   * user would still get a clean not_authorized failure from the actual
+   * handler, never real data.
+   */
+  canViewAuditLog: boolean
 }
 
 export type LoginOutcome = { success: true; session: SafeSessionInfo } | { success: false }
@@ -16,7 +28,7 @@ export type UnlockOutcome = { success: true; session: SafeSessionInfo } | { succ
 export type SessionState =
   | { state: 'logged_out' }
   | { state: 'locked'; displayName: string }
-  | { state: 'active'; displayName: string; isOwner: boolean }
+  | { state: 'active'; displayName: string; isOwner: boolean; canViewAuditLog: boolean }
 
 export interface StartIdleLockTimerOptions {
   /** Idle duration after which the current session is locked. Default 5 minutes. */
@@ -84,7 +96,11 @@ export interface LoginServiceOptions {
 }
 
 function toSafeSessionInfo(user: SafeUser, roleCodes: readonly string[]): SafeSessionInfo {
-  return { displayName: user.displayName, isOwner: hasOwnerRole(roleCodes) }
+  return {
+    displayName: user.displayName,
+    isOwner: hasOwnerRole(roleCodes),
+    canViewAuditLog: can({ roleCodes }, 'audit.read')
+  }
 }
 
 /**
@@ -201,7 +217,8 @@ export function createLoginService(options: LoginServiceOptions): LoginService {
       return {
         state: 'active',
         displayName: context.user.displayName,
-        isOwner: hasOwnerRole(roleCodes)
+        isOwner: hasOwnerRole(roleCodes),
+        canViewAuditLog: can({ roleCodes }, 'audit.read')
       }
     },
 

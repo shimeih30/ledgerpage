@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 9
+## Current status: M1, Slice 10
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -25,20 +25,24 @@ ceremony — with no renderer screens or IPC endpoints yet. Slice 8 put those
 primitives to first use: a first-run setup wizard that atomically creates
 the real company profile, the real numbering rules, and the application's
 one initial Owner account, with a mandatory one-time recovery-key
-ceremony. Slice 9 is where the application becomes usable session to
-session: an ordinary login/lock/logout flow for the Owner and any
-additional users the Owner creates, and a minimal, Owner-only Users &
-Roles settings screen — reusing every Slice 7 primitive as-is
-(`authenticate`, `sessionManager`, `can`/`assertCan`) rather than
-duplicating any of it.
+ceremony. Slice 9 made the application usable session to session: an
+ordinary login/lock/logout flow for the Owner and any additional users the
+Owner creates, and a minimal, Owner-only Users & Roles settings screen.
+Slice 10 closes the loop on every mutation Slices 6, 8, and 9 introduced:
+an append-only audit trail, retrofitted onto those slices' existing
+service functions rather than routed through a new, parallel layer, and a
+basic, filterable, cursor-paginated viewer readable by Owner, Executive,
+and Finance.
 
-**Intentionally absent at this stage:** fine-grained (per-field)
-permissions (roles stay coarse-grained, per the confirmed decision), SSO,
-any way to change an existing user's role once created, audit logging,
-products, inventory, customers, suppliers, orders, recipes, production,
-expenses, accounts, exchange rates, unit conversions, persistent sessions
-across app restarts, and any database or filesystem access exposed to the
-renderer beyond the sixteen narrow, typed methods described below.
+**Intentionally absent at this stage:** approval workflows (Slice 30), any
+retention/archival policy for audit rows beyond keeping everything,
+fine-grained (per-field) permissions (roles stay coarse-grained, per the
+confirmed decision), SSO, any way to change an existing user's role once
+created, products, inventory, customers, suppliers, orders, recipes,
+production, expenses, accounts, exchange rates, unit conversions,
+persistent sessions across app restarts, and any database or filesystem
+access exposed to the renderer beyond the seventeen narrow, typed methods
+described below.
 
 ### Authentication foundations
 
@@ -244,6 +248,61 @@ A fourth pass closed four narrower edge cases:
     function-shaped thenable callback fell through to better-sqlite3's
     own internal guard instead, throwing a generic `TypeError` rather
     than the documented, controlled `AsyncTransactionCallbackError`.
+
+### Audit logging
+
+**Retrofitted onto Slices 6, 8, and 9's existing service functions** —
+`taxCodeService.ts`, `taxRateVersionService.ts`,
+`firstRunSetupService.ts`'s `completeSetup`, and
+`userManagementService.ts` — rather than routed through a new, parallel
+layer. Every audit-write call sits inside the exact same SQLite
+transaction as the business mutation it records, via a single shared
+function, `auditService.record(tx, ...)`, which deliberately takes an
+already-open `AppTransaction`, never a plain `AppDb`: an audit-write
+failure (a bad serialization, a constraint violation) rolls back the
+business mutation too, verified directly by deliberately supplying an
+invalid `action` value mid-transaction and confirming the accompanying
+row never persists. Two of the four single-statement Slice 9 mutations
+(`deactivateAdditionalUser`/`reactivateAdditionalUser`) needed to become
+internally transaction-wrapped for this — confirmed empirically first
+that better-sqlite3 supports nested `db.transaction()` calls via
+savepoints, which is what makes wrapping them internally, with no
+external signature change, actually work.
+
+Every call site supplies an explicit `AuditActor`
+(`{type:'user',userId}` or `{type:'system'}`) — never a default: Slice
+8's `completeSetup` uses `system` (no session exists yet, since the
+Owner is being created in the same transaction); Slice 6 and 9's
+mutations use the freshly authorized caller's own id, never the target
+entity being acted on. Redaction is recursive — walks every nested
+object and array in a mutation's before/after snapshot, matching
+normalized key names against a fixed pattern list (`password`,
+`passphrase`, `hash`, `secret`, `token`, `recovery`, `credential`,
+`apikey`, `privatekey`, `authorization`, `cookie`, `session`, `otp`,
+`salt`) — and happens before a row is ever written, so an unredacted
+secret is never even momentarily persisted. `audit_log_entries.user_id`
+uses `ON DELETE RESTRICT`, not `SET NULL` like `login_events` — combining
+`SET NULL` with the table's own actor-consistency `CHECK` constraint
+would have been a live contradiction (a hypothetical user deletion could
+silently violate "every `user`-actor row has a non-null `user_id`");
+`RESTRICT` keeps the two constraints consistent with each other by
+construction.
+
+`auditService.listEntries` never returns the complete table: bounded
+cursor pagination, ordered `occurred_at DESC, id DESC` (a composite index
+supports this), with a default page size and a hard-clamped maximum
+enforced server-side regardless of what a caller requests. The one new
+IPC channel, `audit:list`, is gated by a new, generic authorization
+gate — `requireAuthorizedCaller(db, loginService, action)` — extracted
+from `userManagementService.ts`'s own `requireOwnerCaller` pattern but
+parameterized over an arbitrary `Action`, reusable by any future slice's
+service (deliberately not retrofitted onto `userManagementService.ts`
+itself in this slice — that file is approved, twice-corrected code, and
+touching it here would be unjustified churn). The renderer's
+`session.canViewAuditLog` flag exists purely to decide whether the Audit
+Log nav link is shown — confirmed directly, with a live diagnostic, that
+a call to `audit:list` succeeds or fails identically regardless of that
+flag's value, since the handler never reads it at all.
 
 ### First-run setup wizard
 

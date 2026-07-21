@@ -29,6 +29,13 @@
       "when": 1784272918521,
       "tag": "0003_authentication_foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784494078692,
+      "tag": "0004_audit_logging",
+      "breakpoints": true
     }
   ]
 }

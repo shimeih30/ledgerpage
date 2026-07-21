@@ -34,7 +34,8 @@ function installMockApi(overrides: {
     createUser: vi.fn(),
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
-    listAssignableRoles: vi.fn()
+    listAssignableRoles: vi.fn(),
+    listAuditEntries: vi.fn()
   }
 }
 
@@ -61,7 +62,13 @@ describe('AuthenticatedApp', () => {
 
   it('active renders the authenticated shell', async () => {
     installMockApi({
-      getSessionState: () => Promise.resolve({ state: 'active', displayName: 'Ben', isOwner: true })
+      getSessionState: () =>
+        Promise.resolve({
+          state: 'active',
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true
+        })
     })
     render(<AuthenticatedApp />)
     expect(await screen.findByText('Slice 1 — application shell')).toBeDefined()
@@ -79,7 +86,12 @@ describe('AuthenticatedApp', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const getSessionState = vi
         .fn<() => Promise<SessionState>>()
-        .mockResolvedValueOnce({ state: 'active', displayName: 'Ben', isOwner: true })
+        .mockResolvedValueOnce({
+          state: 'active',
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true
+        })
         .mockResolvedValue({ state: 'locked', displayName: 'Ben' })
       installMockApi({ getSessionState })
 
@@ -103,7 +115,12 @@ describe('AuthenticatedApp', () => {
       const touchSession = vi.fn().mockResolvedValue(undefined)
       installMockApi({
         getSessionState: () =>
-          Promise.resolve({ state: 'active', displayName: 'Ben', isOwner: true }),
+          Promise.resolve({
+            state: 'active',
+            displayName: 'Ben',
+            isOwner: true,
+            canViewAuditLog: true
+          }),
         touchSession
       })
 
@@ -122,9 +139,10 @@ describe('AuthenticatedApp', () => {
     it('LoginScreen -> active shell after a successful login', async () => {
       installMockApi({
         getSessionState: () => Promise.resolve({ state: 'logged_out' }),
-        login: vi
-          .fn()
-          .mockResolvedValue({ success: true, session: { displayName: 'Ben', isOwner: true } })
+        login: vi.fn().mockResolvedValue({
+          success: true,
+          session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        })
       })
       render(<AuthenticatedApp />)
       expect(await screen.findByText('Sign in to LedgerPage')).toBeDefined()
@@ -140,9 +158,10 @@ describe('AuthenticatedApp', () => {
     it('LockScreen -> active shell after a successful unlock', async () => {
       installMockApi({
         getSessionState: () => Promise.resolve({ state: 'locked', displayName: 'Ben' }),
-        unlockSession: vi
-          .fn()
-          .mockResolvedValue({ success: true, session: { displayName: 'Ben', isOwner: true } })
+        unlockSession: vi.fn().mockResolvedValue({
+          success: true,
+          session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        })
       })
       render(<AuthenticatedApp />)
       expect(await screen.findByText('Welcome back, Ben')).toBeDefined()
@@ -157,7 +176,12 @@ describe('AuthenticatedApp', () => {
     it('AuthenticatedShell logout -> back to LoginScreen', async () => {
       installMockApi({
         getSessionState: () =>
-          Promise.resolve({ state: 'active', displayName: 'Ben', isOwner: true })
+          Promise.resolve({
+            state: 'active',
+            displayName: 'Ben',
+            isOwner: true,
+            canViewAuditLog: true
+          })
       })
       render(<AuthenticatedApp />)
       expect(await screen.findByText('Slice 1 — application shell')).toBeDefined()

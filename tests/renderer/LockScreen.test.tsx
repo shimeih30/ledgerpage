@@ -26,7 +26,8 @@ function installMockApi(unlockSession: () => Promise<UnlockResult>): void {
     createUser: vi.fn(),
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
-    listAssignableRoles: vi.fn()
+    listAssignableRoles: vi.fn(),
+    listAuditEntries: vi.fn()
   }
 }
 
@@ -42,7 +43,10 @@ describe('LockScreen', () => {
 
   it('calls onUnlocked with the session on a correct password', async () => {
     installMockApi(() =>
-      Promise.resolve({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      Promise.resolve({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
     )
     const onUnlocked = vi.fn()
     const user = userEvent.setup()
@@ -51,14 +55,21 @@ describe('LockScreen', () => {
     await user.type(screen.getByLabelText('Password'), 'a-strong-password-1')
     await user.click(screen.getByRole('button', { name: 'Unlock' }))
 
-    expect(onUnlocked).toHaveBeenCalledWith({ displayName: 'Ben', isOwner: true })
+    expect(onUnlocked).toHaveBeenCalledWith({
+      displayName: 'Ben',
+      isOwner: true,
+      canViewAuditLog: true
+    })
   })
 
   it('a wrong password shows an inline error, clears the field, and allows retry', async () => {
     const unlockSession = vi
       .fn()
       .mockResolvedValueOnce({ success: false })
-      .mockResolvedValueOnce({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      .mockResolvedValueOnce({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
     installMockApi(unlockSession)
     const onUnlocked = vi.fn()
     const user = userEvent.setup()
@@ -73,7 +84,11 @@ describe('LockScreen', () => {
     await user.type(screen.getByLabelText('Password'), 'a-strong-password-1')
     await user.click(screen.getByRole('button', { name: 'Unlock' }))
 
-    expect(onUnlocked).toHaveBeenCalledWith({ displayName: 'Ben', isOwner: true })
+    expect(onUnlocked).toHaveBeenCalledWith({
+      displayName: 'Ben',
+      isOwner: true,
+      canViewAuditLog: true
+    })
   })
 
   it('disables the submit button while the request is in flight', async () => {
@@ -91,7 +106,10 @@ describe('LockScreen', () => {
     const busyButton = await screen.findByRole('button', { name: 'Unlocking\u2026' })
     expect(busyButton.hasAttribute('disabled')).toBe(true)
 
-    resolveUnlock({ success: true, session: { displayName: 'Ben', isOwner: true } })
+    resolveUnlock({
+      success: true,
+      session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+    })
   })
 
   it('a thrown IPC error shows a safe, generic message', async () => {

@@ -590,4 +590,113 @@ describe('userManagementService', () => {
       expect(result).toEqual({ success: false, errorCode: 'unexpected_error' })
     }, 20000)
   })
+
+  describe('Slice 10: every mutation produces exactly one matching audit row', () => {
+    function auditRowsFor(
+      entityId: string
+    ): { entityType: string; action: string; actorType: string; userId: string | null }[] {
+      return rawDb
+        .prepare(
+          'SELECT entity_type as entityType, action, actor_type as actorType, user_id as userId FROM audit_log_entries WHERE entity_id = ? ORDER BY rowid'
+        )
+        .all(entityId) as {
+        entityType: string
+        action: string
+        actorType: string
+        userId: string | null
+      }[]
+    }
+
+    it('createAdditionalUser produces exactly two rows: user + role-assignment, attributed to the calling Owner', async () => {
+      const { userMgmt } = await createServicesLoggedInAsOwner()
+      await userMgmt.createAdditionalUser(db, VALID_CREATE_INPUT)
+
+      const listResult = userMgmt.listUsers(db)
+      const financeUserId =
+        listResult.success && listResult.users.find((u) => u.loginIdentifier === 'financeuser')?.id
+      expect(financeUserId).toBeDefined()
+
+      const userRows = auditRowsFor(financeUserId as string)
+      expect(userRows).toHaveLength(1)
+      expect(userRows[0]).toMatchObject({ entityType: 'user', action: 'create', actorType: 'user' })
+      expect(userRows[0].userId).toBe(ownerId)
+
+      const roleRows = rawDb
+        .prepare(
+          "SELECT entity_type as entityType, action FROM audit_log_entries WHERE entity_type = 'user_role' AND entity_id LIKE ?"
+        )
+        .all(`${financeUserId}:%`) as { entityType: string; action: string }[]
+      expect(roleRows).toHaveLength(1)
+      expect(roleRows[0].action).toBe('create')
+    }, 20000)
+
+    it('deactivateAdditionalUser/reactivateAdditionalUser each produce exactly one row with the isActive transition', async () => {
+      const { userMgmt } = await createServicesLoggedInAsOwner()
+      await userMgmt.createAdditionalUser(db, VALID_CREATE_INPUT)
+      const listResult = userMgmt.listUsers(db)
+      const financeUserId =
+        listResult.success && listResult.users.find((u) => u.loginIdentifier === 'financeuser')?.id
+      expect(financeUserId).toBeDefined()
+
+      userMgmt.deactivateAdditionalUser(db, financeUserId as string)
+      userMgmt.reactivateAdditionalUser(db, financeUserId as string)
+
+      const rows = auditRowsFor(financeUserId as string)
+      expect(rows.map((r) => r.action)).toEqual(['create', 'deactivate', 'reactivate'])
+
+      const changedFieldsRows = rawDb
+        .prepare(
+          "SELECT changed_fields as changedFields, action FROM audit_log_entries WHERE entity_id = ? AND action IN ('deactivate', 'reactivate') ORDER BY rowid"
+        )
+        .all(financeUserId) as { changedFields: string; action: string }[]
+      expect(JSON.parse(changedFieldsRows[0].changedFields)).toEqual({
+        isActive: { old: true, new: false }
+      })
+      expect(JSON.parse(changedFieldsRows[1].changedFields)).toEqual({
+        isActive: { old: false, new: true }
+      })
+    }, 20000)
+
+    it('a rejected duplicate-login-identifier creation produces zero audit rows', async () => {
+      const { userMgmt } = await createServicesLoggedInAsOwner()
+      await userMgmt.createAdditionalUser(db, VALID_CREATE_INPUT)
+      const beforeCount = rawDb.prepare('SELECT COUNT(*) as c FROM audit_log_entries').get() as {
+        c: number
+      }
+
+      const result = await userMgmt.createAdditionalUser(db, VALID_CREATE_INPUT)
+      expect(result).toEqual({ success: false, errorCode: 'duplicate_login_identifier' })
+
+      const afterCount = rawDb.prepare('SELECT COUNT(*) as c FROM audit_log_entries').get() as {
+        c: number
+      }
+      expect(afterCount.c).toBe(beforeCount.c)
+    }, 20000)
+
+    it('deactivation invalidates the session only after the transaction (and its audit row) truly commits', async () => {
+      const sessionManager = createSessionManager()
+      const ownerLoginService = createLoginService({ sessionManager })
+      const userMgmt = createUserManagementService({
+        loginService: ownerLoginService,
+        sessionManager
+      })
+      await ownerLoginService.login(db, 'ben', REAL_PASSWORD)
+      await userMgmt.createAdditionalUser(db, VALID_CREATE_INPUT)
+      const listResult = userMgmt.listUsers(db)
+      const financeUserId =
+        listResult.success && listResult.users.find((u) => u.loginIdentifier === 'financeuser')?.id
+      expect(financeUserId).toBeDefined()
+
+      const financeSession = sessionManager.create(financeUserId as string, PRIMARY_COMPANY_ID, [
+        'finance'
+      ])
+      expect(sessionManager.get(financeSession.sessionId)).toBeDefined()
+
+      userMgmt.deactivateAdditionalUser(db, financeUserId as string)
+
+      expect(sessionManager.get(financeSession.sessionId)).toBeUndefined()
+      const rows = auditRowsFor(financeUserId as string)
+      expect(rows.some((r) => r.action === 'deactivate')).toBe(true)
+    }, 20000)
+  })
 })
