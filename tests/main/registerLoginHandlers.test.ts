@@ -149,7 +149,10 @@ describe('registerLoginHandlers', () => {
         loginIdentifier: 'ben',
         password: REAL_PASSWORD
       })
-      expect(result).toEqual({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      expect(result).toEqual({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
       expect(Object.keys(result as object)).not.toContain('sessionId')
     })
 
@@ -178,7 +181,8 @@ describe('registerLoginHandlers', () => {
       expect(handlers['login:get-session-state'](APPROVED_EVENT)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: true
+        isOwner: true,
+        canViewAuditLog: true
       })
     })
   })

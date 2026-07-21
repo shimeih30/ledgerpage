@@ -14,10 +14,12 @@ import {
 } from '../../../src/main/db/taxRateResolutionService'
 import { TaxValidationError } from '../../../src/main/db/validation/taxValidation'
 import { taxRateVersions } from '../../../src/main/db/schema'
+import type { AuditActor } from '../../../src/main/audit/auditService'
 import type { AppDb } from '../../../src/main/db/dbTypes'
 import { createTempDir, removeTempDir } from '../../helpers/tempDir'
 
 const REAL_MIGRATIONS_FOLDER = join(process.cwd(), 'migrations')
+const SYSTEM_ACTOR: AuditActor = { type: 'system' }
 
 describe('taxRateResolutionService.resolveTaxRate', () => {
   let dir: string
@@ -42,25 +44,41 @@ describe('taxRateResolutionService.resolveTaxRate', () => {
       currencyId: 'currency_usd'
     })
 
-    standardCode = createTaxCode(db, { code: 'STD', name: 'Standard', category: 'standard' })
-    zeroRatedCode = createTaxCode(db, { code: 'ZERO', name: 'Zero Rated', category: 'zero_rated' })
+    standardCode = createTaxCode(
+      db,
+      { code: 'STD', name: 'Standard', category: 'standard' },
+      SYSTEM_ACTOR
+    )
+    zeroRatedCode = createTaxCode(
+      db,
+      { code: 'ZERO', name: 'Zero Rated', category: 'zero_rated' },
+      SYSTEM_ACTOR
+    )
 
     // Two historical rates: 15% through mid-2026, then 17.5% for the
     // rest of that year (left closed, not open-ended, so a genuinely
     // later, non-overlapping version can be added in the test below).
     db.transaction((tx) => {
-      createTaxRateVersion(tx, {
-        taxCodeId: standardCode.id,
-        ratePpm: 150000,
-        effectiveFrom: '2020-01-01',
-        effectiveTo: '2026-06-30'
-      })
-      createTaxRateVersion(tx, {
-        taxCodeId: standardCode.id,
-        ratePpm: 175000,
-        effectiveFrom: '2026-07-01',
-        effectiveTo: '2026-12-31'
-      })
+      createTaxRateVersion(
+        tx,
+        {
+          taxCodeId: standardCode.id,
+          ratePpm: 150000,
+          effectiveFrom: '2020-01-01',
+          effectiveTo: '2026-06-30'
+        },
+        SYSTEM_ACTOR
+      )
+      createTaxRateVersion(
+        tx,
+        {
+          taxCodeId: standardCode.id,
+          ratePpm: 175000,
+          effectiveFrom: '2026-07-01',
+          effectiveTo: '2026-12-31'
+        },
+        SYSTEM_ACTOR
+      )
     })
   })
 
@@ -96,11 +114,15 @@ describe('taxRateResolutionService.resolveTaxRate', () => {
     const before = resolveTaxRate(db, { taxCodeId: standardCode.id }, '2026-03-15')
 
     db.transaction((tx) =>
-      createTaxRateVersion(tx, {
-        taxCodeId: standardCode.id,
-        ratePpm: 200000,
-        effectiveFrom: '2027-01-01'
-      })
+      createTaxRateVersion(
+        tx,
+        {
+          taxCodeId: standardCode.id,
+          ratePpm: 200000,
+          effectiveFrom: '2027-01-01'
+        },
+        SYSTEM_ACTOR
+      )
     )
 
     const after = resolveTaxRate(db, { taxCodeId: standardCode.id }, '2026-03-15')
@@ -119,7 +141,11 @@ describe('taxRateResolutionService.resolveTaxRate', () => {
 
   it('zero_rated resolves to ratePpm 0 once a version exists covering the date', () => {
     db.transaction((tx) =>
-      createTaxRateVersion(tx, { taxCodeId: zeroRatedCode.id, effectiveFrom: '2026-01-01' })
+      createTaxRateVersion(
+        tx,
+        { taxCodeId: zeroRatedCode.id, effectiveFrom: '2026-01-01' },
+        SYSTEM_ACTOR
+      )
     )
     const result = resolveTaxRate(db, { taxCodeId: zeroRatedCode.id }, '2026-05-01')
     expect(result?.ratePpm).toBe(0)
@@ -172,7 +198,7 @@ describe('taxRateResolutionService.resolveTaxRate', () => {
   })
 
   it('resolves correctly for a deactivated tax code — deactivation does not affect historical resolution', () => {
-    deactivateTaxCode(db, standardCode.id)
+    deactivateTaxCode(db, standardCode.id, SYSTEM_ACTOR)
     const result = resolveTaxRate(db, { taxCodeId: standardCode.id }, '2026-03-15')
     expect(result?.ratePpm).toBe(150000)
   })
@@ -194,7 +220,11 @@ describe('taxRateResolutionService.resolveTaxRate', () => {
       // category version with a null rate_ppm, since
       // taxRateVersionService now refuses to ever create or update one
       // into that state.
-      const otherCode = createTaxCode(db, { code: 'OTH', name: 'Other', category: 'other' })
+      const otherCode = createTaxCode(
+        db,
+        { code: 'OTH', name: 'Other', category: 'other' },
+        SYSTEM_ACTOR
+      )
       const now = new Date()
       rawDb
         .prepare(

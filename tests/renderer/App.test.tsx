@@ -35,7 +35,8 @@ function installMockApi(
     createUser: vi.fn(),
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
-    listAssignableRoles: vi.fn()
+    listAssignableRoles: vi.fn(),
+    listAuditEntries: vi.fn()
   }
 }
 
@@ -73,7 +74,13 @@ describe('App', () => {
   it('setup_complete with an active session renders the authenticated shell', async () => {
     installMockApi(
       () => Promise.resolve({ status: 'setup_complete' }),
-      () => Promise.resolve({ state: 'active', displayName: 'Ben', isOwner: true })
+      () =>
+        Promise.resolve({
+          state: 'active',
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true
+        })
     )
     render(<App />)
 

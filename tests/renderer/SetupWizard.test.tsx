@@ -57,7 +57,8 @@ function installMockApi(overrides: MockApiOverrides = {}) {
     createUser: vi.fn(),
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
-    listAssignableRoles: vi.fn()
+    listAssignableRoles: vi.fn(),
+    listAuditEntries: vi.fn()
   }
   window.ledgerpage = api
   return api

@@ -35,6 +35,7 @@
  */
 import {
   check,
+  index,
   integer,
   primaryKey,
   sqliteTable,
@@ -412,5 +413,64 @@ export const loginEvents = sqliteTable(
       'login_events_source_valid',
       sql`${t.source} IN ('normal_login', 'session_unlock', 'owner_recovery')`
     )
+  ]
+)
+
+/**
+ * Slice 10: append-only audit trail. No service exposed anywhere in this
+ * codebase updates or deletes a row here — see auditService.ts, whose
+ * only exported write operation is `record`, which only ever inserts.
+ *
+ * user_id uses ON DELETE RESTRICT, not SET NULL — deliberately, and
+ * unlike login_events above. This app never hard-deletes a user (only
+ * deactivates), so the distinction is aspirational today, but it matters
+ * for a reason beyond that: this table also carries a CHECK constraint
+ * (audit_log_entries_actor_user_consistency) requiring every 'user'-actor
+ * row to have a non-null user_id. Combining that CHECK with ON DELETE SET
+ * NULL would be a live contradiction — a hypothetical future user
+ * deletion would silently violate the actor-consistency invariant this
+ * same migration defines. RESTRICT keeps attribution intact and makes
+ * the two constraints consistent with each other by construction, not by
+ * hoping the SET NULL path never actually gets exercised.
+ *
+ * changed_fields is a JSON-encoded object of `{field: {old, new}}` pairs
+ * — only fields that actually changed for update/deactivate/reactivate;
+ * every field as {old: null, new: value} for create. Redaction (see
+ * auditService.ts's recursive redactor) happens before this column is
+ * ever written, not at read time — an unredacted secret is never even
+ * momentarily persisted.
+ *
+ * Composite index on (occurred_at, id) supports the cursor-paginated
+ * listing (Correction 6: never return the complete table) with stable,
+ * gap-free ordering — id is included because occurred_at alone is not
+ * guaranteed unique (two entries in the same transaction can share a
+ * millisecond timestamp).
+ */
+export const auditLogEntries = sqliteTable(
+  'audit_log_entries',
+  {
+    id: text('id').primaryKey(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    entityLabel: text('entity_label').notNull(),
+    action: text('action').notNull(),
+    changedFields: text('changed_fields'),
+    actorType: text('actor_type').notNull(),
+    userId: text('user_id').references(() => users.id, { onDelete: 'restrict' }),
+    companyId: text('company_id').references(() => company.id, { onDelete: 'restrict' }),
+    occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    check(
+      'audit_log_entries_action_valid',
+      sql`${t.action} IN ('create', 'update', 'deactivate', 'reactivate')`
+    ),
+    check('audit_log_entries_actor_type_valid', sql`${t.actorType} IN ('user', 'system')`),
+    check(
+      'audit_log_entries_actor_user_consistency',
+      sql`(${t.actorType} = 'system' AND ${t.userId} IS NULL) OR (${t.actorType} = 'user' AND ${t.userId} IS NOT NULL)`
+    ),
+    index('audit_log_entries_occurred_at_id_idx').on(t.occurredAt, t.id),
+    index('audit_log_entries_entity_type_idx').on(t.entityType)
   ]
 )

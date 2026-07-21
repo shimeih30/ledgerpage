@@ -8,6 +8,7 @@ import {
   validateRatePpm,
   type DateRange
 } from './validation/taxValidation'
+import { record, type AuditActor } from '../audit/auditService'
 import type { AppTransaction } from './dbTypes'
 import type { TaxCategory } from './taxCodeService'
 
@@ -170,6 +171,7 @@ export function listTaxRateVersions(tx: AppTransaction, taxCodeId: string): TaxR
 export function createTaxRateVersion(
   tx: AppTransaction,
   input: CreateTaxRateVersionInput,
+  actor: AuditActor,
   now: Date = new Date()
 ): TaxRateVersion {
   const taxCode = requireTaxCode(tx, input.taxCodeId)
@@ -201,6 +203,26 @@ export function createTaxRateVersion(
     })
     .run()
 
+  record(
+    tx,
+    {
+      entityType: 'tax_rate_version',
+      entityId: id,
+      entityLabel: `${taxCode.code} rate effective ${input.effectiveFrom}`,
+      action: 'create',
+      actor,
+      companyId: taxCode.companyId,
+      before: null,
+      after: {
+        taxCodeId: input.taxCodeId,
+        ratePpm,
+        effectiveFrom: input.effectiveFrom,
+        effectiveTo
+      }
+    },
+    now
+  )
+
   const created = tx.select().from(taxRateVersions).where(eq(taxRateVersions.id, id)).get()
   if (!created) {
     throw new TaxRateVersionError('Tax rate version was not persisted after creation')
@@ -212,6 +234,7 @@ export function updateTaxRateVersion(
   tx: AppTransaction,
   id: string,
   input: UpdateTaxRateVersionInput,
+  actor: AuditActor,
   now: Date = new Date()
 ): TaxRateVersion {
   const existing = tx.select().from(taxRateVersions).where(eq(taxRateVersions.id, id)).get()
@@ -253,6 +276,29 @@ export function updateTaxRateVersion(
     })
     .where(eq(taxRateVersions.id, id))
     .run()
+
+  record(
+    tx,
+    {
+      entityType: 'tax_rate_version',
+      entityId: id,
+      entityLabel: `${taxCode.code} rate effective ${nextEffectiveFrom}`,
+      action: 'update',
+      actor,
+      companyId: taxCode.companyId,
+      before: {
+        ratePpm: existing.ratePpm,
+        effectiveFrom: existing.effectiveFrom,
+        effectiveTo: existing.effectiveTo
+      },
+      after: {
+        ratePpm: nextRatePpm,
+        effectiveFrom: nextEffectiveFrom,
+        effectiveTo: nextEffectiveTo
+      }
+    },
+    now
+  )
 
   const updated = tx.select().from(taxRateVersions).where(eq(taxRateVersions.id, id)).get()
   if (!updated) {

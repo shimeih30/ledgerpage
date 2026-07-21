@@ -55,7 +55,8 @@ describe('preload API surface after Slice 3', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })
@@ -114,7 +115,8 @@ describe('preload API surface after Slice 4', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })
@@ -172,7 +174,8 @@ describe('preload API surface after Slice 5', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })
@@ -222,7 +225,8 @@ describe('preload API surface after Slice 6', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })
@@ -293,7 +297,8 @@ describe('preload API surface after Slice 7', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })
@@ -364,7 +369,8 @@ describe('preload API surface after Slice 8', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })
@@ -432,7 +438,72 @@ describe('preload API surface after Slice 9', () => {
         'createUser',
         'deactivateUser',
         'reactivateUser',
-        'listAssignableRoles'
+        'listAssignableRoles',
+        'listAuditEntries'
+      ].sort()
+    )
+  })
+})
+
+/**
+ * Slice 10 adds the one read-only audit:list channel. This test exists
+ * to make explicit that the things this slice specifically must never
+ * expose — any audit mutation method (record/update/delete an audit
+ * entry), arbitrary SQL, or a raw database handle — are still absent,
+ * beyond the eleven narrow login/session/users/roles/audit methods.
+ */
+describe('preload API surface after Slice 10', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    exposeInMainWorld.mockClear()
+  })
+
+  it('does not expose any audit mutation method or arbitrary-SQL/database-handle access', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+
+    for (const forbidden of [
+      'recordaudit',
+      'createaudit',
+      'updateaudit',
+      'deleteaudit',
+      'removeaudit',
+      'auditwrite',
+      'auditmutate',
+      'rawsql',
+      'exec',
+      'database',
+      'sessionid'
+    ]) {
+      expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
+    }
+  })
+
+  it('exposes exactly the approved app-info + Slice 8/9/10 API after Slice 10 — nothing unapproved added', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    expect(Object.keys(api).sort()).toEqual(
+      [
+        'getAppInfo',
+        'getFirstRunStatus',
+        'prepareRecoveryKey',
+        'confirmRecoveryKey',
+        'cancelRecoveryKey',
+        'completeSetup',
+        'login',
+        'getSessionState',
+        'unlockSession',
+        'logout',
+        'touchSession',
+        'listUsers',
+        'createUser',
+        'deactivateUser',
+        'reactivateUser',
+        'listAssignableRoles',
+        'listAuditEntries'
       ].sort()
     )
   })

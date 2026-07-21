@@ -42,6 +42,12 @@ import {
   type MutateUserResult,
   type UserIdInput
 } from '../shared/ipc/users'
+import {
+  AUDIT_LIST_CHANNEL,
+  type LedgerPageAuditApi,
+  type ListAuditEntriesInput,
+  type ListAuditEntriesResult
+} from '../shared/ipc/audit'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -61,14 +67,26 @@ import {
  * layer carries no isOwner flag of its own and grants nothing by
  * itself.
  *
+ * listAuditEntries is Slice 10's one, read-only method. Like every
+ * users/roles call above, it is re-authorized fresh, server-side, on
+ * every single call — this preload layer's session.canViewAuditLog
+ * (used only to decide whether the renderer *shows* an Audit Log link)
+ * carries no authority of its own and is never consulted by the actual
+ * handler.
+ *
  * Deliberately absent, on every one of these: a database handle,
  * arbitrary SQL, filesystem access, a password hash, a recovery hash,
  * a session id, unrestricted role mutation (no channel can grant or
- * remove the Owner role), or any way to invoke anything else in the
- * main process. Do not add additional keys here without updating the
- * corresponding shared/ipc source file and its tests.
+ * remove the Owner role), a way to update or delete an audit entry, or
+ * any way to invoke anything else in the main process. Do not add
+ * additional keys here without updating the corresponding shared/ipc
+ * source file and its tests.
  */
-const api: LedgerPageApi & LedgerPageSetupApi & LedgerPageLoginApi & LedgerPageUsersApi = {
+const api: LedgerPageApi &
+  LedgerPageSetupApi &
+  LedgerPageLoginApi &
+  LedgerPageUsersApi &
+  LedgerPageAuditApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -109,7 +127,10 @@ const api: LedgerPageApi & LedgerPageSetupApi & LedgerPageLoginApi & LedgerPageU
     ipcRenderer.invoke(USERS_REACTIVATE_CHANNEL, input),
 
   listAssignableRoles: (): Promise<ListAssignableRolesResult> =>
-    ipcRenderer.invoke(ROLES_LIST_ASSIGNABLE_CHANNEL)
+    ipcRenderer.invoke(ROLES_LIST_ASSIGNABLE_CHANNEL),
+
+  listAuditEntries: (input: ListAuditEntriesInput): Promise<ListAuditEntriesResult> =>
+    ipcRenderer.invoke(AUDIT_LIST_CHANNEL, input)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

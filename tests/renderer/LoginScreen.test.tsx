@@ -26,14 +26,18 @@ function installMockApi(login: () => Promise<LoginResult>): void {
     createUser: vi.fn(),
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
-    listAssignableRoles: vi.fn()
+    listAssignableRoles: vi.fn(),
+    listAuditEntries: vi.fn()
   }
 }
 
 describe('LoginScreen', () => {
   it('calls onLoggedIn with the session on success', async () => {
     installMockApi(() =>
-      Promise.resolve({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      Promise.resolve({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
     )
     const onLoggedIn = vi.fn()
     const user = userEvent.setup()
@@ -43,7 +47,11 @@ describe('LoginScreen', () => {
     await user.type(screen.getByLabelText('Password'), 'a-strong-password-1')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(onLoggedIn).toHaveBeenCalledWith({ displayName: 'Ben', isOwner: true })
+    expect(onLoggedIn).toHaveBeenCalledWith({
+      displayName: 'Ben',
+      isOwner: true,
+      canViewAuditLog: true
+    })
   })
 
   it('shows a generic error on failure — never distinguishing wrong username from wrong password', async () => {
@@ -59,9 +67,10 @@ describe('LoginScreen', () => {
   })
 
   it('does not submit with an empty username or password', async () => {
-    const login = vi
-      .fn()
-      .mockResolvedValue({ success: true, session: { displayName: 'Ben', isOwner: true } })
+    const login = vi.fn().mockResolvedValue({
+      success: true,
+      session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+    })
     installMockApi(login)
     const user = userEvent.setup()
     render(<LoginScreen onLoggedIn={vi.fn()} />)
@@ -90,7 +99,10 @@ describe('LoginScreen', () => {
     const busyButton = await screen.findByRole('button', { name: 'Signing in\u2026' })
     expect(busyButton.hasAttribute('disabled')).toBe(true)
 
-    resolveLogin({ success: true, session: { displayName: 'Ben', isOwner: true } })
+    resolveLogin({
+      success: true,
+      session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+    })
   })
 
   it('a thrown IPC error shows a safe, generic message', async () => {

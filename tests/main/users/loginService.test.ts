@@ -62,11 +62,15 @@ describe('loginService', () => {
       expect(service.getSessionState(db)).toEqual({ state: 'logged_out' })
 
       const result = await service.login(db, 'ben', REAL_PASSWORD)
-      expect(result).toEqual({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      expect(result).toEqual({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: true
+        isOwner: true,
+        canViewAuditLog: true
       })
     }, 20000)
 
@@ -87,7 +91,7 @@ describe('loginService', () => {
       const result = await service.login(db, 'financeuser', REAL_PASSWORD)
       expect(result).toEqual({
         success: true,
-        session: { displayName: 'Finance User', isOwner: false }
+        session: { displayName: 'Finance User', isOwner: false, canViewAuditLog: true }
       })
     }, 20000)
 
@@ -157,7 +161,10 @@ describe('loginService', () => {
       expect(service.getSessionState(db)).toEqual({ state: 'logged_out' })
 
       const result = await service.login(db, 'ben', REAL_PASSWORD)
-      expect(result).toEqual({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      expect(result).toEqual({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
     }, 20000)
 
     it('getCurrentActiveUserId also rechecks and returns undefined once the user is deactivated', async () => {
@@ -183,7 +190,8 @@ describe('loginService', () => {
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: true
+        isOwner: true,
+        canViewAuditLog: true
       })
 
       db.delete(userRoles).where(eq(userRoles.userId, ownerId)).run()
@@ -194,7 +202,8 @@ describe('loginService', () => {
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: false
+        isOwner: false,
+        canViewAuditLog: true
       })
     }, 20000)
   })
@@ -216,12 +225,13 @@ describe('loginService', () => {
       const correctUnlock = await service.unlock(db, REAL_PASSWORD)
       expect(correctUnlock).toEqual({
         success: true,
-        session: { displayName: 'Ben', isOwner: true }
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
       })
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: true
+        isOwner: true,
+        canViewAuditLog: true
       })
     }, 20000)
 
@@ -270,7 +280,8 @@ describe('loginService', () => {
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: true
+        isOwner: true,
+        canViewAuditLog: true
       })
       service.dispose()
     }, 20000)
@@ -330,12 +341,13 @@ describe('loginService', () => {
       const secondLogin = await service.login(db, 'financeuser', REAL_PASSWORD)
       expect(secondLogin).toEqual({
         success: true,
-        session: { displayName: 'Finance User', isOwner: false }
+        session: { displayName: 'Finance User', isOwner: false, canViewAuditLog: true }
       })
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Finance User',
-        isOwner: false
+        isOwner: false,
+        canViewAuditLog: true
       })
     }, 20000)
 
@@ -354,7 +366,10 @@ describe('loginService', () => {
       // A fresh login afterward works normally — no dangling state left
       // over from the hard-expired session.
       const result = await service.login(db, 'ben', REAL_PASSWORD)
-      expect(result).toEqual({ success: true, session: { displayName: 'Ben', isOwner: true } })
+      expect(result).toEqual({
+        success: true,
+        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      })
     }, 20000)
 
     it('dispose stops the idle-lock timer — no further lock checks occur after it', async () => {
@@ -370,7 +385,8 @@ describe('loginService', () => {
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
-        isOwner: true
+        isOwner: true,
+        canViewAuditLog: true
       })
     }, 20000)
 
