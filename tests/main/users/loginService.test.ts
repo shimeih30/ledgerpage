@@ -64,13 +64,21 @@ describe('loginService', () => {
       const result = await service.login(db, 'ben', REAL_PASSWORD)
       expect(result).toEqual({
         success: true,
-        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        session: {
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
+        }
       })
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
         isOwner: true,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
       })
     }, 20000)
 
@@ -91,7 +99,13 @@ describe('loginService', () => {
       const result = await service.login(db, 'financeuser', REAL_PASSWORD)
       expect(result).toEqual({
         success: true,
-        session: { displayName: 'Finance User', isOwner: false, canViewAuditLog: true }
+        session: {
+          displayName: 'Finance User',
+          isOwner: false,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: false
+        }
       })
     }, 20000)
 
@@ -163,7 +177,13 @@ describe('loginService', () => {
       const result = await service.login(db, 'ben', REAL_PASSWORD)
       expect(result).toEqual({
         success: true,
-        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        session: {
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
+        }
       })
     }, 20000)
 
@@ -191,7 +211,9 @@ describe('loginService', () => {
         state: 'active',
         displayName: 'Ben',
         isOwner: true,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
       })
 
       db.delete(userRoles).where(eq(userRoles.userId, ownerId)).run()
@@ -203,7 +225,9 @@ describe('loginService', () => {
         state: 'active',
         displayName: 'Ben',
         isOwner: false,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: false
       })
     }, 20000)
   })
@@ -225,13 +249,21 @@ describe('loginService', () => {
       const correctUnlock = await service.unlock(db, REAL_PASSWORD)
       expect(correctUnlock).toEqual({
         success: true,
-        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        session: {
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
+        }
       })
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Ben',
         isOwner: true,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
       })
     }, 20000)
 
@@ -281,7 +313,9 @@ describe('loginService', () => {
         state: 'active',
         displayName: 'Ben',
         isOwner: true,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
       })
       service.dispose()
     }, 20000)
@@ -341,13 +375,21 @@ describe('loginService', () => {
       const secondLogin = await service.login(db, 'financeuser', REAL_PASSWORD)
       expect(secondLogin).toEqual({
         success: true,
-        session: { displayName: 'Finance User', isOwner: false, canViewAuditLog: true }
+        session: {
+          displayName: 'Finance User',
+          isOwner: false,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: false
+        }
       })
       expect(service.getSessionState(db)).toEqual({
         state: 'active',
         displayName: 'Finance User',
         isOwner: false,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: false
       })
     }, 20000)
 
@@ -368,7 +410,13 @@ describe('loginService', () => {
       const result = await service.login(db, 'ben', REAL_PASSWORD)
       expect(result).toEqual({
         success: true,
-        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        session: {
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
+        }
       })
     }, 20000)
 
@@ -386,7 +434,9 @@ describe('loginService', () => {
         state: 'active',
         displayName: 'Ben',
         isOwner: true,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
       })
     }, 20000)
 

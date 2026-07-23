@@ -26,7 +26,9 @@ function toAuthAppState(sessionState: SessionState): AuthAppState {
     session: {
       displayName: sessionState.displayName,
       isOwner: sessionState.isOwner,
-      canViewAuditLog: sessionState.canViewAuditLog
+      canViewAuditLog: sessionState.canViewAuditLog,
+      canViewProducts: sessionState.canViewProducts,
+      canManageProducts: sessionState.canManageProducts
     }
   }
 }

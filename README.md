@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 10
+## Current status: M1, Slice 11
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -32,17 +32,21 @@ Slice 10 closes the loop on every mutation Slices 6, 8, and 9 introduced:
 an append-only audit trail, retrofitted onto those slices' existing
 service functions rather than routed through a new, parallel layer, and a
 basic, filterable, cursor-paginated viewer readable by Owner, Executive,
-and Finance.
+and Finance. Slice 11 adds the first master-data module: a product catalog
+(manufactured goods and services, each with one or more variants), with
+system-allocated product codes, USD minor-unit pricing, an optional
+active-tax-code assignment per variant, and Owner/Executive/Operations
+edit access with Finance limited to read-only.
 
 **Intentionally absent at this stage:** approval workflows (Slice 30), any
 retention/archival policy for audit rows beyond keeping everything,
 fine-grained (per-field) permissions (roles stay coarse-grained, per the
 confirmed decision), SSO, any way to change an existing user's role once
-created, products, inventory, customers, suppliers, orders, recipes,
-production, expenses, accounts, exchange rates, unit conversions,
-persistent sessions across app restarts, and any database or filesystem
-access exposed to the renderer beyond the seventeen narrow, typed methods
-described below.
+created, recipes, inventory linkage, sales pricing history, discounts,
+customers, suppliers, orders, production, expenses, accounts, exchange
+rates, unit conversions, persistent sessions across app restarts, and any
+database or filesystem access exposed to the renderer beyond the thirty
+narrow, typed methods described below.
 
 ### Authentication foundations
 
@@ -303,6 +307,91 @@ touching it here would be unjustified churn). The renderer's
 Log nav link is shown — confirmed directly, with a live diagnostic, that
 a call to `audit:list` succeeds or fails identically regardless of that
 flag's value, since the handler never reads it at all.
+
+### Products & variants
+
+The product catalog: manufactured goods (each with one or more variants,
+e.g. 100 ml / 200 ml / 2 L) and services (no stock, no recipe — a product's
+`type` is fixed at creation and never editable afterward, since letting it
+change after variants exist could silently leave a formerly-manufactured
+product's variants holding a nonzero minimum-stock value a service
+product's variants are never allowed to have). `products.code` is never
+renderer- or IPC-supplied — `productService.createProduct` allocates it
+via `numberingService.allocateNext('product', ...)` inside the same
+transaction as the insert, using the `product` numbering rule (prefix
+`PRD`, never-reset) Slice 8's first-run transaction already seeds but
+which sat unused until this slice. Immutable thereafter: no update
+function anywhere in `productService.ts` accepts a `code` value at all —
+a structural guarantee, not merely a runtime-rejected one.
+`product_variants.code`, by contrast, is ordinary user-entered input (no
+numbering rule exists for variants), unique within its parent product
+only — the same code may recur across two different products — and
+editable afterward, with uniqueness re-checked on every change.
+
+Pricing is USD, integer minor units (cents), and never a caller choice:
+`product_variants.currency_id` exists on the row (the plan requires
+price-plus-currency) but is always written as `FUNCTIONAL_CURRENCY_ID`
+server-side — no code path anywhere accepts it as input, mirroring
+`company.currency_id`'s own "no code path lets a caller choose a
+different functional currency" posture. The renderer accepts price as a
+decimal string ("10.29") and converts it via
+`parseDecimalToMinorUnits`, which extracts the whole and fractional
+digit-strings via a regex and concatenates them as integers — never
+`Number(value) * 100`, confirmed directly that this specific naive
+multiplication is not a theoretical concern (`0.29 * 100 ===
+28.999999999999996` in IEEE 754 double precision, and `Math.round`
+doesn't save every case either: `1.005 * 100 === 100.49999999999999`,
+which rounds to 100, not 101). At most two decimal places are accepted;
+anything else — three decimal places, a negative value, an empty
+string — is rejected before any IPC call is made, never silently
+clamped or rounded.
+
+Barcode is nullable; empty input is normalized to `null` before storage,
+and a partial unique index (`WHERE barcode IS NOT NULL`) rejects a
+genuine duplicate real barcode while letting any number of variants share
+"no barcode yet." A variant's tax code is nullable and, when assigned,
+must reference an existing, primary-company, currently-active tax code —
+but a later deactivation of that tax code never clears or cascades onto
+a variant that already references it. To support this, `SafeProductVariant`
+carries a server-resolved `taxCodeLabel` (the referenced tax code's own
+`code`, via a `LEFT JOIN` in `productVariantService`'s own read
+functions, mirroring Slice 10's `actorLabel` resolution pattern exactly)
+so the edit form can still show "currently references STD" after STD is
+deactivated — without STD ever becoming a new, offerable choice again in
+the active-only tax-code dropdown; the moment the user picks a different
+option, that historical option disappears entirely, and the reference is
+never cleared merely by editing an unrelated field. Assignable tax codes
+are read through one new, deliberately narrow IPC method,
+`listAssignableTaxCodes` — Slice 6 itself shipped no tax IPC/UI surface
+at all — returning only `{id, code, name}` for active, primary-company
+tax codes, gated by `products.read` rather than `tax.read` specifically
+so Operations (which has `products.manage` but not `tax.read`) can still
+see it; no rate, percentage, category, or mutation surface is exposed
+through it.
+
+Deactivating a product changes only that product's own flag — never its
+variants; deactivating a variant changes only that variant. Both are
+reversible, explicit, separate actions. Owner, Executive, and Operations
+all receive `products.read` and `products.manage`; Finance receives
+`products.read` only — the first slice where a non-Owner role holds a
+"manage" (write) action, and the first where two roles other than Owner
+hold write access to the same resource. Every product/variant
+create/update/deactivate/reactivate writes exactly one audit row in the
+same transaction as the business mutation, via the same
+`auditService.record` Slice 10 introduced; a no-op mutation (e.g.
+reactivating an already-active row) writes none. `canViewProducts` and
+`canManageProducts` are cosmetic-only session flags, exactly like
+`canViewAuditLog` before them — real enforcement is
+`requireAuthorizedCaller`, resolved fresh from SQLite on every single
+call in the main process, regardless of what the renderer shows or
+believes.
+
+**Intentionally excluded from this slice:** recipes (Slice 19), inventory
+linkage (a manufactured variant doesn't yet know what it consumes —
+adding a nullable FK toward a not-yet-existing inventory table now would
+be guessing at a later slice's shape), sales pricing history and
+discounts, and any accounting posting (this is non-financial master data;
+nothing here touches a ledger).
 
 ### First-run setup wizard
 

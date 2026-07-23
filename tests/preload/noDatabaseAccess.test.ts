@@ -34,7 +34,7 @@ describe('preload API surface after Slice 3', () => {
     }
   })
 
-  it('still exposes exactly the approved app-info + Slice 8/9 API — nothing unapproved added', async () => {
+  it('still exposes exactly the approved app-info + Slice 8/9/10/11 API — nothing unapproved added', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -56,7 +56,20 @@ describe('preload API surface after Slice 3', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -116,7 +129,20 @@ describe('preload API surface after Slice 4', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -175,7 +201,20 @@ describe('preload API surface after Slice 5', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -185,7 +224,14 @@ describe('preload API surface after Slice 5', () => {
  * Slice 6 adds tax configuration (tax_codes, tax_rate_versions) and
  * three services (taxCodeService, taxRateVersionService,
  * taxRateResolutionService). This test exists to make explicit that
- * none of that reaches the renderer either.
+ * none of that reaches the renderer either -- except for one narrow,
+ * deliberate exception introduced by Slice 11: listAssignableTaxCodes,
+ * a read-only lookup of {id, code, name} for active tax codes only,
+ * needed for the product variant form's tax-code dropdown (Slice 6
+ * itself shipped no tax UI/IPC surface at all). This is not a general
+ * tax-management API — no create/update/deactivate/reactivate/rate-
+ * resolution method is exposed, and no inactive tax code or rate detail
+ * is ever included in its result.
  */
 describe('preload API surface after Slice 6', () => {
   beforeEach(() => {
@@ -193,11 +239,13 @@ describe('preload API surface after Slice 6', () => {
     exposeInMainWorld.mockClear()
   })
 
-  it('does not expose any tax method to the renderer', async () => {
+  it('does not expose any tax method to the renderer, other than the one narrow, justified Slice 11 exception', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
-    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+    const exposedKeys = Object.keys(api)
+      .filter((key) => key !== 'listAssignableTaxCodes')
+      .map((key) => key.toLowerCase())
 
     for (const forbidden of ['tax', 'vatregist', 'rate', 'ppm', 'resolve']) {
       expect(exposedKeys.some((key) => key.includes(forbidden))).toBe(false)
@@ -226,7 +274,20 @@ describe('preload API surface after Slice 6', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -298,7 +359,20 @@ describe('preload API surface after Slice 7', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -370,7 +444,20 @@ describe('preload API surface after Slice 8', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -439,7 +526,20 @@ describe('preload API surface after Slice 9', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })
@@ -503,7 +603,20 @@ describe('preload API surface after Slice 10', () => {
         'deactivateUser',
         'reactivateUser',
         'listAssignableRoles',
-        'listAuditEntries'
+        'listAuditEntries',
+        'listProducts',
+        'getProduct',
+        'createProduct',
+        'updateProduct',
+        'deactivateProduct',
+        'reactivateProduct',
+        'listVariantsForProduct',
+        'getVariant',
+        'createVariant',
+        'updateVariant',
+        'deactivateVariant',
+        'reactivateVariant',
+        'listAssignableTaxCodes'
       ].sort()
     )
   })

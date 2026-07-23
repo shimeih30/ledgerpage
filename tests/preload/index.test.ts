@@ -27,7 +27,20 @@ const EXPECTED_KEYS = [
   'deactivateUser',
   'reactivateUser',
   'listAssignableRoles',
-  'listAuditEntries'
+  'listAuditEntries',
+  'listProducts',
+  'getProduct',
+  'createProduct',
+  'updateProduct',
+  'deactivateProduct',
+  'reactivateProduct',
+  'listVariantsForProduct',
+  'getVariant',
+  'createVariant',
+  'updateVariant',
+  'deactivateVariant',
+  'reactivateVariant',
+  'listAssignableTaxCodes'
 ]
 
 describe('preload API surface', () => {
@@ -44,7 +57,7 @@ describe('preload API surface', () => {
     expect(exposeInMainWorld.mock.calls[0][0]).toBe('ledgerpage')
   })
 
-  it('exposes exactly getAppInfo plus the Slice 8 setup, Slice 9 login/users, and Slice 10 audit methods, no others', async () => {
+  it('exposes exactly getAppInfo plus the Slice 8 setup, Slice 9 login/users, Slice 10 audit, and Slice 11 products methods, no others', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
@@ -266,5 +279,55 @@ describe('preload API surface', () => {
     await api.listAuditEntries(input)
 
     expect(invoke).toHaveBeenCalledWith(AUDIT_LIST_CHANNEL, input)
+  })
+
+  it('listProducts invokes exactly the products:list channel, with no arguments', async () => {
+    await import('../../src/preload/index')
+    const { PRODUCTS_LIST_CHANNEL } = await import('../../src/shared/ipc/products')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as { listProducts: () => Promise<unknown> }
+    await api.listProducts()
+
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith(PRODUCTS_LIST_CHANNEL)
+  })
+
+  it('createProduct forwards its input to the products:create channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { PRODUCTS_CREATE_CHANNEL } = await import('../../src/shared/ipc/products')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createProduct: (input: unknown) => Promise<unknown>
+    }
+    const input = { name: 'Jam', type: 'manufactured' }
+    await api.createProduct(input)
+
+    expect(invoke).toHaveBeenCalledWith(PRODUCTS_CREATE_CHANNEL, input)
+  })
+
+  it('createVariant forwards its input to the product-variants:create channel unchanged -- structurally never a currencyId, actor, or session field, since CreateVariantInput has no such properties', async () => {
+    await import('../../src/preload/index')
+    const { PRODUCT_VARIANTS_CREATE_CHANNEL } = await import('../../src/shared/ipc/products')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createVariant: (input: unknown) => Promise<unknown>
+    }
+    const input = { productId: 'product_1', code: 'A', name: 'A', sellingPriceMinor: 500 }
+    await api.createVariant(input)
+
+    expect(invoke).toHaveBeenCalledWith(PRODUCT_VARIANTS_CREATE_CHANNEL, input)
+  })
+
+  it('deactivateVariant forwards its input to the product-variants:deactivate channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { PRODUCT_VARIANTS_DEACTIVATE_CHANNEL } = await import('../../src/shared/ipc/products')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      deactivateVariant: (input: unknown) => Promise<unknown>
+    }
+    const input = { variantId: 'variant_1' }
+    await api.deactivateVariant(input)
+
+    expect(invoke).toHaveBeenCalledWith(PRODUCT_VARIANTS_DEACTIVATE_CHANNEL, input)
   })
 })

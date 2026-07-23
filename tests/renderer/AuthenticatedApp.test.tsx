@@ -35,7 +35,20 @@ function installMockApi(overrides: {
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
     listAssignableRoles: vi.fn(),
-    listAuditEntries: vi.fn()
+    listAuditEntries: vi.fn(),
+    listProducts: vi.fn(),
+    getProduct: vi.fn(),
+    createProduct: vi.fn(),
+    updateProduct: vi.fn(),
+    deactivateProduct: vi.fn(),
+    reactivateProduct: vi.fn(),
+    listVariantsForProduct: vi.fn(),
+    getVariant: vi.fn(),
+    createVariant: vi.fn(),
+    updateVariant: vi.fn(),
+    deactivateVariant: vi.fn(),
+    reactivateVariant: vi.fn(),
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
   }
 }
 
@@ -67,7 +80,9 @@ describe('AuthenticatedApp', () => {
           state: 'active',
           displayName: 'Ben',
           isOwner: true,
-          canViewAuditLog: true
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
         })
     })
     render(<AuthenticatedApp />)
@@ -90,7 +105,9 @@ describe('AuthenticatedApp', () => {
           state: 'active',
           displayName: 'Ben',
           isOwner: true,
-          canViewAuditLog: true
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
         })
         .mockResolvedValue({ state: 'locked', displayName: 'Ben' })
       installMockApi({ getSessionState })
@@ -119,7 +136,9 @@ describe('AuthenticatedApp', () => {
             state: 'active',
             displayName: 'Ben',
             isOwner: true,
-            canViewAuditLog: true
+            canViewAuditLog: true,
+            canViewProducts: true,
+            canManageProducts: true
           }),
         touchSession
       })
@@ -141,7 +160,13 @@ describe('AuthenticatedApp', () => {
         getSessionState: () => Promise.resolve({ state: 'logged_out' }),
         login: vi.fn().mockResolvedValue({
           success: true,
-          session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+          session: {
+            displayName: 'Ben',
+            isOwner: true,
+            canViewAuditLog: true,
+            canViewProducts: true,
+            canManageProducts: true
+          }
         })
       })
       render(<AuthenticatedApp />)
@@ -160,7 +185,13 @@ describe('AuthenticatedApp', () => {
         getSessionState: () => Promise.resolve({ state: 'locked', displayName: 'Ben' }),
         unlockSession: vi.fn().mockResolvedValue({
           success: true,
-          session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+          session: {
+            displayName: 'Ben',
+            isOwner: true,
+            canViewAuditLog: true,
+            canViewProducts: true,
+            canManageProducts: true
+          }
         })
       })
       render(<AuthenticatedApp />)
@@ -180,7 +211,9 @@ describe('AuthenticatedApp', () => {
             state: 'active',
             displayName: 'Ben',
             isOwner: true,
-            canViewAuditLog: true
+            canViewAuditLog: true,
+            canViewProducts: true,
+            canManageProducts: true
           })
       })
       render(<AuthenticatedApp />)

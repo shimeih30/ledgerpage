@@ -48,6 +48,40 @@ import {
   type ListAuditEntriesInput,
   type ListAuditEntriesResult
 } from '../shared/ipc/audit'
+import {
+  PRODUCTS_CREATE_CHANNEL,
+  PRODUCTS_DEACTIVATE_CHANNEL,
+  PRODUCTS_GET_CHANNEL,
+  PRODUCTS_LIST_ASSIGNABLE_TAX_CODES_CHANNEL,
+  PRODUCTS_LIST_CHANNEL,
+  PRODUCTS_REACTIVATE_CHANNEL,
+  PRODUCTS_UPDATE_CHANNEL,
+  PRODUCT_VARIANTS_CREATE_CHANNEL,
+  PRODUCT_VARIANTS_DEACTIVATE_CHANNEL,
+  PRODUCT_VARIANTS_GET_CHANNEL,
+  PRODUCT_VARIANTS_LIST_FOR_PRODUCT_CHANNEL,
+  PRODUCT_VARIANTS_REACTIVATE_CHANNEL,
+  PRODUCT_VARIANTS_UPDATE_CHANNEL,
+  type CreateProductInput,
+  type CreateProductResult,
+  type CreateVariantInput,
+  type CreateVariantResult,
+  type GetProductResult,
+  type GetVariantResult,
+  type LedgerPageProductsApi,
+  type ListAssignableTaxCodesResult,
+  type ListProductsResult,
+  type ListVariantsForProductInput,
+  type ListVariantsForProductResult,
+  type MutateProductResult,
+  type MutateVariantResult,
+  type ProductIdInput,
+  type UpdateProductInput,
+  type UpdateProductResult,
+  type UpdateVariantInput,
+  type UpdateVariantResult,
+  type VariantIdInput
+} from '../shared/ipc/products'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -86,7 +120,8 @@ const api: LedgerPageApi &
   LedgerPageSetupApi &
   LedgerPageLoginApi &
   LedgerPageUsersApi &
-  LedgerPageAuditApi = {
+  LedgerPageAuditApi &
+  LedgerPageProductsApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -130,7 +165,47 @@ const api: LedgerPageApi &
     ipcRenderer.invoke(ROLES_LIST_ASSIGNABLE_CHANNEL),
 
   listAuditEntries: (input: ListAuditEntriesInput): Promise<ListAuditEntriesResult> =>
-    ipcRenderer.invoke(AUDIT_LIST_CHANNEL, input)
+    ipcRenderer.invoke(AUDIT_LIST_CHANNEL, input),
+
+  listProducts: (): Promise<ListProductsResult> => ipcRenderer.invoke(PRODUCTS_LIST_CHANNEL),
+
+  getProduct: (input: ProductIdInput): Promise<GetProductResult> =>
+    ipcRenderer.invoke(PRODUCTS_GET_CHANNEL, input),
+
+  createProduct: (input: CreateProductInput): Promise<CreateProductResult> =>
+    ipcRenderer.invoke(PRODUCTS_CREATE_CHANNEL, input),
+
+  updateProduct: (input: UpdateProductInput): Promise<UpdateProductResult> =>
+    ipcRenderer.invoke(PRODUCTS_UPDATE_CHANNEL, input),
+
+  deactivateProduct: (input: ProductIdInput): Promise<MutateProductResult> =>
+    ipcRenderer.invoke(PRODUCTS_DEACTIVATE_CHANNEL, input),
+
+  reactivateProduct: (input: ProductIdInput): Promise<MutateProductResult> =>
+    ipcRenderer.invoke(PRODUCTS_REACTIVATE_CHANNEL, input),
+
+  listVariantsForProduct: (
+    input: ListVariantsForProductInput
+  ): Promise<ListVariantsForProductResult> =>
+    ipcRenderer.invoke(PRODUCT_VARIANTS_LIST_FOR_PRODUCT_CHANNEL, input),
+
+  getVariant: (input: VariantIdInput): Promise<GetVariantResult> =>
+    ipcRenderer.invoke(PRODUCT_VARIANTS_GET_CHANNEL, input),
+
+  createVariant: (input: CreateVariantInput): Promise<CreateVariantResult> =>
+    ipcRenderer.invoke(PRODUCT_VARIANTS_CREATE_CHANNEL, input),
+
+  updateVariant: (input: UpdateVariantInput): Promise<UpdateVariantResult> =>
+    ipcRenderer.invoke(PRODUCT_VARIANTS_UPDATE_CHANNEL, input),
+
+  deactivateVariant: (input: VariantIdInput): Promise<MutateVariantResult> =>
+    ipcRenderer.invoke(PRODUCT_VARIANTS_DEACTIVATE_CHANNEL, input),
+
+  reactivateVariant: (input: VariantIdInput): Promise<MutateVariantResult> =>
+    ipcRenderer.invoke(PRODUCT_VARIANTS_REACTIVATE_CHANNEL, input),
+
+  listAssignableTaxCodes: (): Promise<ListAssignableTaxCodesResult> =>
+    ipcRenderer.invoke(PRODUCTS_LIST_ASSIGNABLE_TAX_CODES_CHANNEL)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

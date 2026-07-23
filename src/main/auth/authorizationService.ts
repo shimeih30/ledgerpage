@@ -15,7 +15,9 @@ export const ACTIONS = [
   'numbering.update',
   'tax.read',
   'tax.manage',
-  'audit.read'
+  'audit.read',
+  'products.read',
+  'products.manage'
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -60,14 +62,36 @@ export interface AuthPrincipal {
  *   slice defines — day-to-day document numbering), and nothing else,
  *   since no other operational actions exist yet in this action set.
  *
+ * Slice 11 (products.read/products.manage): owner, executive, and
+ * operations all receive both — the first case in this matrix where
+ * executive and operations hold a "manage" (write) action, per the
+ * plan's explicit "Operations/Executive edit access." finance receives
+ * neither — the plan names only Operations/Executive, and per this same
+ * conservative-reading convention, an unstated capability (e.g. finance
+ * needing product visibility for costing context) is not assumed.
+ *
  * owner always receives every defined action, computed from ACTIONS
  * rather than hand-duplicated, so a newly added action is automatically
  * granted to owner without this file needing a matching edit.
  */
 const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action[]> = {
-  executive: ['company.read', 'numbering.read', 'tax.read', 'audit.read'],
-  operations: ['numbering.read'],
-  finance: ['company.read', 'numbering.read', 'tax.read', 'tax.manage', 'audit.read']
+  executive: [
+    'company.read',
+    'numbering.read',
+    'tax.read',
+    'audit.read',
+    'products.read',
+    'products.manage'
+  ],
+  operations: ['numbering.read', 'products.read', 'products.manage'],
+  finance: [
+    'company.read',
+    'numbering.read',
+    'tax.read',
+    'tax.manage',
+    'audit.read',
+    'products.read'
+  ]
 }
 
 const ROLE_ACTION_MATRIX: Record<RoleCode, ReadonlySet<Action>> = {

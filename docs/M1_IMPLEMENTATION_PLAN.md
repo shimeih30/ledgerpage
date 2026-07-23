@@ -560,6 +560,62 @@ data.
   at this slice — this becomes testable once Slices 18/21/23 exist, and
   is re-verified then).
 
+**Decisions approved for this slice (owner review, following the
+pre-implementation plan above).**
+
+1. **Product code.** `products.code` is automatically allocated using
+   the existing, previously-unused `product` numbering rule (seeded by
+   Slice 8), inside the same transaction as product creation. Never
+   accepted from the renderer or IPC input. Immutable after creation.
+   `product_variants.code` is user-entered and unique within its parent
+   product (not company-wide).
+2. **Currency.** `product_variants.currency_id` is kept (the plan
+   requires price plus currency) but always set internally to
+   `FUNCTIONAL_CURRENCY_ID` for M1 — never exposed through IPC or UI as
+   a choice. `sellingPriceMinor` is a non-negative integer.
+3. **Shared visual tokens.** `src/renderer/src/audit/ui.ts` relocates to
+   `src/renderer/src/shared/ui.ts`; `AuditLogScreen.tsx` imports update
+   accordingly. Products screens use the same shared
+   operational-minimalist tokens. Login, setup, Users & Roles, and the
+   overall shell are explicitly not redesigned in this slice.
+4. **Authorization architecture.** Product IPC handlers use
+   `requireAuthorizedCaller` with fresh SQLite roles (Slice 10's
+   pattern), not `userManagementService`'s older, Owner-only,
+   internally-checked pattern. `productService`/`productVariantService`
+   remain session-independent, accepting an explicit `AuditActor` —
+   matching `taxCodeService`. Any cosmetic session flag is never trusted
+   as the real authorization boundary.
+5. **Permissions.** `owner`, `executive`, and `operations` all receive
+   both `products.read` and `products.manage`; `finance` receives
+   `products.read` only. Two new cosmetic session flags —
+   `canViewProducts`, `canManageProducts` — gate renderer nav/UI
+   visibility only, exactly like `canViewAuditLog`.
+6. **Barcode.** Nullable; trimmed on input, with an empty string
+   normalized to `null`. A partial unique index covers non-null values
+   only; a duplicate non-null barcode is rejected cleanly.
+7. **Product-type behavior.** A service product may have zero variants.
+   Service variants never request stock fields in the UI and always
+   store `minimumFinishedStockLevel = 0`; a direct attempt to set a
+   nonzero value on a service variant is rejected at the service layer
+   regardless of what the UI shows. Manufactured variants allow a
+   non-negative minimum stock level, defaulting to 0.
+8. **Deactivation.** Deactivating a product changes only that product's
+   active flag — it never cascades to deactivate its variants, and
+   never deletes anything. Deactivating a variant changes only that
+   variant. Reactivation is always a separate, explicit action.
+9. **Tax code.** Nullable on a variant. When assigned, it must
+   reference an existing, primary-company, currently-active tax code.
+   A later deactivation of that tax code must never destroy the
+   variant's stored reference (the FK is never cleared or cascaded).
+10. **Audit behavior.** Every product/variant create, update,
+    deactivate, or reactivate writes exactly one matching audit row in
+    the same transaction as the business mutation — no more, no fewer.
+    Numbering-rule counter allocation itself receives no separate audit
+    row (it is an implementation detail of the create, not a
+    independently-audited entity). A failed or true no-op mutation
+    (e.g. reactivating an already-active row) produces no audit row,
+    matching `taxCodeService`'s established no-op-suppression rule.
+
 ---
 
 ### Slice 12 — Inventory Items

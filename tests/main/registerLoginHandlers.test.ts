@@ -151,7 +151,13 @@ describe('registerLoginHandlers', () => {
       })
       expect(result).toEqual({
         success: true,
-        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        session: {
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
+        }
       })
       expect(Object.keys(result as object)).not.toContain('sessionId')
     })
@@ -182,7 +188,9 @@ describe('registerLoginHandlers', () => {
         state: 'active',
         displayName: 'Ben',
         isOwner: true,
-        canViewAuditLog: true
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
       })
     })
   })
