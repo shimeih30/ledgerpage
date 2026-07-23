@@ -474,3 +474,112 @@ export const auditLogEntries = sqliteTable(
     index('audit_log_entries_entity_type_idx').on(t.entityType)
   ]
 )
+
+/**
+ * Slice 11: the product catalog. `code` is never accepted as input from
+ * any caller — it is always allocated by numberingService.allocateNext
+ * ('product', ...) inside the same transaction as the insert (see
+ * productService.ts), using the `product` numbering rule Slice 8's
+ * first-run transaction already seeds (prefix PRD, never-reset). Once
+ * created, code is immutable — no update path in productService.ts
+ * accepts a code value at all.
+ *
+ * type is a fixed two-value enum: 'manufactured' variants may carry a
+ * nonzero minimum finished-stock level; 'service' variants may not
+ * (enforced in productVariantService.ts, not expressible as a
+ * cross-table CHECK constraint since SQLite CHECK constraints only see
+ * one row and product type lives on the parent).
+ */
+export const PRODUCT_TYPES = ['manufactured', 'service'] as const
+
+export const products = sqliteTable(
+  'products',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    type: text('type').notNull(),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('products_company_code_unique').on(t.companyId, t.code),
+    check('products_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`),
+    check('products_type_valid', sql`${t.type} IN ('manufactured', 'service')`)
+  ]
+)
+
+/**
+ * Slice 11: variants of a product (e.g. 100 ml / 200 ml / 2 L). Unlike
+ * products.code, product_variants.code is ordinary user-entered input —
+ * no numbering rule exists for variants — validated unique *within its
+ * parent product* only (products_variants_product_code_unique below),
+ * not company-wide; two different products may each have their own
+ * "100ML" variant.
+ *
+ * product_id uses the default FK action (effectively RESTRICT-like:
+ * SQLite refuses a delete that would orphan a referencing row unless an
+ * explicit ON DELETE clause says otherwise) — consistent with this
+ * app's standing "never hard-delete, only deactivate" posture; nothing
+ * in this codebase ever attempts to delete a products row, so this is
+ * defense in depth, not a path this slice actually exercises.
+ *
+ * selling_price_minor is an integer (never a float), matching
+ * tax_rate_versions.rate_ppm's own "no floating-point money/rate
+ * arithmetic" precedent. currency_id is present because the plan
+ * requires price-plus-currency, but productVariantService.ts never
+ * accepts it as caller input — every row is written with
+ * FUNCTIONAL_CURRENCY_ID, mirroring company.currency_id's own "no code
+ * path lets a caller choose a different functional currency" posture.
+ *
+ * tax_code_id is nullable (a variant need not have a tax code yet) and,
+ * once set, is never cleared by a later tax-code deactivation — a
+ * deactivated tax code simply stops being *assignable* to new/updated
+ * variants (enforced in productVariantService.ts), while any variant
+ * already referencing it keeps that reference intact, exactly like
+ * tax_rate_versions' own historical-rate stability requirement.
+ *
+ * barcode is nullable; empty input is normalized to NULL before this
+ * column is ever written (see productVariantService.ts), so the partial
+ * unique index below only ever has to reject a genuine duplicate real
+ * barcode, never two coincidentally-blank ones.
+ *
+ * minimum_finished_stock_level has no operational meaning yet
+ * (inventory linkage doesn't exist until Slice 12) — captured now,
+ * enforced now (non-negative; zero-only for a service-type variant, via
+ * productVariantService.ts since a CHECK constraint here can't see the
+ * parent product's type), consumed later.
+ */
+export const productVariants = sqliteTable(
+  'product_variants',
+  {
+    id: text('id').primaryKey(),
+    productId: text('product_id')
+      .notNull()
+      .references(() => products.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    sellingPriceMinor: integer('selling_price_minor').notNull(),
+    currencyId: text('currency_id')
+      .notNull()
+      .references(() => currencies.id),
+    taxCodeId: text('tax_code_id').references(() => taxCodes.id),
+    barcode: text('barcode'),
+    minimumFinishedStockLevel: integer('minimum_finished_stock_level').notNull().default(0),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('product_variants_product_code_unique').on(t.productId, t.code),
+    uniqueIndex('product_variants_barcode_unique')
+      .on(t.barcode)
+      .where(sql`${t.barcode} IS NOT NULL`),
+    check('product_variants_selling_price_non_negative', sql`${t.sellingPriceMinor} >= 0`),
+    check('product_variants_min_stock_non_negative', sql`${t.minimumFinishedStockLevel} >= 0`)
+  ]
+)

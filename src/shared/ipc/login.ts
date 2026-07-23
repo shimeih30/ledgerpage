@@ -35,6 +35,19 @@ export interface SafeSessionInfo {
    * from SQLite on every call, entirely independent of this value.
    */
   canViewAuditLog: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Products nav link / read-only view. Real enforcement is products:*'s
+   * own requireAuthorizedCaller('products.read') checks.
+   */
+  canViewProducts: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate controls on the Products screens. Real
+   * enforcement is products:*'s own requireAuthorizedCaller('products.manage')
+   * checks on each individual mutating call.
+   */
+  canManageProducts: boolean
 }
 
 export type LoginResult = { success: true; session: SafeSessionInfo } | { success: false }
@@ -47,7 +60,14 @@ export type LoginResult = { success: true; session: SafeSessionInfo } | { succes
 export type SessionState =
   | { state: 'logged_out' }
   | { state: 'locked'; displayName: string }
-  | { state: 'active'; displayName: string; isOwner: boolean; canViewAuditLog: boolean }
+  | {
+      state: 'active'
+      displayName: string
+      isOwner: boolean
+      canViewAuditLog: boolean
+      canViewProducts: boolean
+      canManageProducts: boolean
+    }
 
 export interface UnlockInput {
   password: string

@@ -12,9 +12,23 @@ import {
 // this test would actually fail if the module's matrix silently drifted.
 const EXPECTED_MATRIX: Record<(typeof ROLE_CODES)[number], readonly string[]> = {
   owner: [...ACTIONS],
-  executive: ['company.read', 'numbering.read', 'tax.read', 'audit.read'],
-  operations: ['numbering.read'],
-  finance: ['company.read', 'numbering.read', 'tax.read', 'tax.manage', 'audit.read']
+  executive: [
+    'company.read',
+    'numbering.read',
+    'tax.read',
+    'audit.read',
+    'products.read',
+    'products.manage'
+  ],
+  operations: ['numbering.read', 'products.read', 'products.manage'],
+  finance: [
+    'company.read',
+    'numbering.read',
+    'tax.read',
+    'tax.manage',
+    'audit.read',
+    'products.read'
+  ]
 }
 
 describe('authorizationService', () => {
@@ -30,7 +44,9 @@ describe('authorizationService', () => {
       'numbering.update',
       'tax.read',
       'tax.manage',
-      'audit.read'
+      'audit.read',
+      'products.read',
+      'products.manage'
     ])
   })
 

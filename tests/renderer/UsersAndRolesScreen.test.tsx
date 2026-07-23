@@ -60,7 +60,20 @@ function installMockApi(overrides: {
         { code: 'finance', name: 'Finance' }
       ]
     }),
-    listAuditEntries: vi.fn()
+    listAuditEntries: vi.fn(),
+    listProducts: vi.fn(),
+    getProduct: vi.fn(),
+    createProduct: vi.fn(),
+    updateProduct: vi.fn(),
+    deactivateProduct: vi.fn(),
+    reactivateProduct: vi.fn(),
+    listVariantsForProduct: vi.fn(),
+    getVariant: vi.fn(),
+    createVariant: vi.fn(),
+    updateVariant: vi.fn(),
+    deactivateVariant: vi.fn(),
+    reactivateVariant: vi.fn(),
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
   }
 }
 

@@ -36,7 +36,20 @@ function installMockApi(
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
     listAssignableRoles: vi.fn(),
-    listAuditEntries: vi.fn()
+    listAuditEntries: vi.fn(),
+    listProducts: vi.fn(),
+    getProduct: vi.fn(),
+    createProduct: vi.fn(),
+    updateProduct: vi.fn(),
+    deactivateProduct: vi.fn(),
+    reactivateProduct: vi.fn(),
+    listVariantsForProduct: vi.fn(),
+    getVariant: vi.fn(),
+    createVariant: vi.fn(),
+    updateVariant: vi.fn(),
+    deactivateVariant: vi.fn(),
+    reactivateVariant: vi.fn(),
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
   }
 }
 
@@ -79,7 +92,9 @@ describe('App', () => {
           state: 'active',
           displayName: 'Ben',
           isOwner: true,
-          canViewAuditLog: true
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
         })
     )
     render(<App />)

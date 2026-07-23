@@ -143,7 +143,20 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'deactivateUser',
           'reactivateUser',
           'listAssignableRoles',
-          'listAuditEntries'
+          'listAuditEntries',
+          'listProducts',
+          'getProduct',
+          'createProduct',
+          'updateProduct',
+          'deactivateProduct',
+          'reactivateProduct',
+          'listVariantsForProduct',
+          'getVariant',
+          'createVariant',
+          'updateVariant',
+          'deactivateVariant',
+          'reactivateVariant',
+          'listAssignableTaxCodes'
         ].sort()
       )
     })

@@ -7,6 +7,7 @@ import { runMigrations } from '../../../src/main/db/runMigrations'
 import { seedReferenceData } from '../../../src/main/db/seedReferenceData'
 import { seedRoles } from '../../../src/main/db/seedRoles'
 import { createCompany } from '../../../src/main/db/companyService'
+import { createTaxCode } from '../../../src/main/db/taxCodeService'
 import { createUser } from '../../../src/main/auth/userService'
 import { hashPassword } from '../../../src/main/auth/passwordHashing'
 import { userRoles } from '../../../src/main/db/schema'
@@ -236,6 +237,414 @@ describe('Slice 10 migration (0004_audit_logging)', () => {
       ]
 
       const diffOutput = execFileSync('git', ['diff', 'm1-slice-09', '--', ...filesToCheck], {
+        cwd: process.cwd(),
+        encoding: 'utf-8'
+      })
+
+      expect(diffOutput.trim()).toBe('')
+    })
+  })
+})
+
+describe('Slice 11 migration (0005_products_and_variants)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = createTempDir('ledgerpage-migration-0005')
+  })
+
+  afterEach(() => {
+    removeTempDir(dir)
+  })
+
+  describe('fresh database', () => {
+    it('applies all migrations 0000-0005 cleanly, including products and product_variants', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tables = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      const tableNames = tables.map((t) => t.name)
+      expect(tableNames).toContain('products')
+      expect(tableNames).toContain('product_variants')
+
+      rawDb.close()
+    })
+
+    it('rejects a second product with a duplicate (company_id, code) pair', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      const insertProduct = () =>
+        rawDb
+          .prepare(
+            `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+             VALUES (?, 'primary_company', 'PRD-000001', 'X', 'manufactured', 1, ?, ?)`
+          )
+          .run(`product_${Math.random()}`, Date.now(), Date.now())
+
+      insertProduct()
+      expect(insertProduct).toThrow(/UNIQUE constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the product type CHECK constraint rejects an out-of-range value', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+             VALUES ('p1', 'primary_company', 'PRD-000001', 'X', 'bogus', 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('rejects a second variant with a duplicate (product_id, code) pair', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      rawDb
+        .prepare(
+          `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+           VALUES ('p1', 'primary_company', 'PRD-000001', 'X', 'manufactured', 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+
+      const insertVariant = () =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES (?, 'p1', 'A', 'X', 0, 'currency_usd', 0, 1, ?, ?)`
+          )
+          .run(`variant_${Math.random()}`, Date.now(), Date.now())
+
+      insertVariant()
+      expect(insertVariant).toThrow(/UNIQUE constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the non-null-barcode partial unique index rejects a duplicate real barcode but allows two nulls', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      rawDb
+        .prepare(
+          `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+           VALUES ('p1', 'primary_company', 'PRD-000001', 'X', 'manufactured', 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+
+      // Two null barcodes: both succeed.
+      rawDb
+        .prepare(
+          `INSERT INTO product_variants
+           (id, product_id, code, name, selling_price_minor, currency_id, barcode, minimum_finished_stock_level, is_active, created_at, updated_at)
+           VALUES ('v1', 'p1', 'A', 'A', 0, 'currency_usd', NULL, 0, 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, barcode, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES ('v2', 'p1', 'B', 'B', 0, 'currency_usd', NULL, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).not.toThrow()
+
+      // A real, duplicate barcode: rejected.
+      rawDb
+        .prepare(
+          `INSERT INTO product_variants
+           (id, product_id, code, name, selling_price_minor, currency_id, barcode, minimum_finished_stock_level, is_active, created_at, updated_at)
+           VALUES ('v3', 'p1', 'C', 'C', 0, 'currency_usd', '999', 0, 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, barcode, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES ('v4', 'p1', 'D', 'D', 0, 'currency_usd', '999', 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/UNIQUE constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the price and minimum-stock CHECK constraints reject negative values', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      rawDb
+        .prepare(
+          `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+           VALUES ('p1', 'primary_company', 'PRD-000001', 'X', 'manufactured', 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES ('v1', 'p1', 'A', 'A', -1, 'currency_usd', 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES ('v2', 'p1', 'B', 'B', 0, 'currency_usd', -1, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the product_id foreign key behaves as designed: a delete that would orphan a variant is rejected', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      rawDb
+        .prepare(
+          `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+           VALUES ('p1', 'primary_company', 'PRD-000001', 'X', 'manufactured', 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+      rawDb
+        .prepare(
+          `INSERT INTO product_variants
+           (id, product_id, code, name, selling_price_minor, currency_id, minimum_finished_stock_level, is_active, created_at, updated_at)
+           VALUES ('v1', 'p1', 'A', 'A', 0, 'currency_usd', 0, 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+
+      expect(() => rawDb.prepare('DELETE FROM products WHERE id = ?').run('p1')).toThrow(
+        /FOREIGN KEY constraint failed/
+      )
+
+      rawDb.close()
+    })
+
+    it('the tax_code_id foreign key rejects a reference to a nonexistent tax code, and allows null', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      rawDb
+        .prepare(
+          `INSERT INTO products (id, company_id, code, name, type, is_active, created_at, updated_at)
+           VALUES ('p1', 'primary_company', 'PRD-000001', 'X', 'manufactured', 1, ?, ?)`
+        )
+        .run(Date.now(), Date.now())
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, tax_code_id, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES ('v1', 'p1', 'A', 'A', 0, 'currency_usd', 'does-not-exist', 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/FOREIGN KEY constraint failed/)
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO product_variants
+             (id, product_id, code, name, selling_price_minor, currency_id, tax_code_id, minimum_finished_stock_level, is_active, created_at, updated_at)
+             VALUES ('v2', 'p1', 'B', 'B', 0, 'currency_usd', NULL, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).not.toThrow()
+
+      rawDb.close()
+    })
+  })
+
+  describe('upgrade from an approved Slice 10 database', () => {
+    it('a database with only migrations 0000-0004 applied upgrades cleanly through 0005, preserving all existing data', async () => {
+      const dbPath = join(dir, 'ledgerpage.db')
+      const truncatedMigrationsDir = join(dir, 'migrations-through-0004')
+      buildTruncatedMigrationsFolder(REAL_MIGRATIONS_FOLDER, truncatedMigrationsDir, 5)
+
+      // Simulate an approved Slice 10 install: only 0000-0004 applied.
+      const rawDb = createDatabaseConnection(dbPath)
+      runMigrations(rawDb, truncatedMigrationsDir)
+
+      const tablesBeforeUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesBeforeUpgrade.map((t) => t.name)).not.toContain('products')
+      expect(tablesBeforeUpgrade.map((t) => t.name)).not.toContain('product_variants')
+
+      // Seed real Slice 5-10 data on this pre-Slice-11 database. Every
+      // table used here (company, numbering_rules, tax_codes, users,
+      // roles, user_roles, audit_log_entries) already exists at
+      // 0000-0004 -- unlike the Slice 10 upgrade test above (which
+      // simulates a pre-0004 baseline and must avoid createTaxCode()
+      // for that reason), audit_log_entries already exists here, so the
+      // real, audit-writing service functions are used directly rather
+      // than a bypassing direct insert.
+      seedReferenceData(rawDb)
+      seedRoles(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb) as AppDb
+      createCompany(
+        db,
+        {
+          name: 'Farmer Ben Sauces',
+          address: '1 Main St',
+          contactDetails: 'ben@example.com',
+          currencyId: 'currency_usd'
+        },
+        new Date()
+      )
+      const now = new Date()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_product', 'primary_company', 'product', 'PRD', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(now.getTime(), now.getTime())
+      const taxCode = createTaxCode(
+        db,
+        { code: 'STD', name: 'Standard', category: 'standard' },
+        { type: 'system' }
+      )
+      const passwordHash = await hashPassword(REAL_PASSWORD)
+      const owner = db.transaction((tx) =>
+        createUser(tx, { loginIdentifier: 'ben', displayName: 'Ben', passwordHash })
+      )
+      db.insert(userRoles)
+        .values({ userId: owner.id, roleId: 'role_owner', createdAt: new Date() })
+        .run()
+
+      const auditRowCountBeforeUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      expect(auditRowCountBeforeUpgrade).toBeGreaterThan(0)
+
+      // Now upgrade: apply the full, real migrations folder (0000-0005)
+      // against this same, already-populated database file.
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tablesAfterUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('products')
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('product_variants')
+
+      // Every table's pre-existing data survives the upgrade intact.
+      const companyRow = rawDb.prepare('SELECT * FROM company').get() as
+        { name: string } | undefined
+      expect(companyRow?.name).toBe('Farmer Ben Sauces')
+
+      const numberingRuleRow = rawDb
+        .prepare("SELECT * FROM numbering_rules WHERE document_type_key = 'product'")
+        .get() as { prefix: string } | undefined
+      expect(numberingRuleRow?.prefix).toBe('PRD')
+
+      const taxCodeRow = rawDb.prepare('SELECT * FROM tax_codes WHERE id = ?').get(taxCode.id) as
+        { code: string } | undefined
+      expect(taxCodeRow?.code).toBe('STD')
+
+      const userRow = rawDb.prepare('SELECT * FROM users WHERE id = ?').get(owner.id) as
+        { login_identifier: string } | undefined
+      expect(userRow?.login_identifier).toBe('ben')
+
+      const roleRows = rawDb.prepare('SELECT * FROM roles').all() as { code: string }[]
+      expect(roleRows.map((r) => r.code).sort()).toEqual(
+        ['owner', 'executive', 'operations', 'finance'].sort()
+      )
+
+      const userRoleRow = rawDb
+        .prepare('SELECT * FROM user_roles WHERE user_id = ?')
+        .get(owner.id) as { role_id: string } | undefined
+      expect(userRoleRow?.role_id).toBe('role_owner')
+
+      const auditRowCountAfterUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      expect(auditRowCountAfterUpgrade).toBe(auditRowCountBeforeUpgrade)
+
+      rawDb.close()
+    }, 20000)
+  })
+
+  describe('no pre-existing migration was modified', () => {
+    it('migrations 0000-0004 are byte-identical to their state at the approved m1-slice-10 tag', () => {
+      const filesToCheck = [
+        'migrations/0000_reference_data_tables.sql',
+        'migrations/0001_company_and_numbering_rules.sql',
+        'migrations/0002_tax_configuration.sql',
+        'migrations/0003_authentication_foundations.sql',
+        'migrations/0004_audit_logging.sql'
+      ]
+
+      const diffOutput = execFileSync('git', ['diff', 'm1-slice-10', '--', ...filesToCheck], {
         cwd: process.cwd(),
         encoding: 'utf-8'
       })

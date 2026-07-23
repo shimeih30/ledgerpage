@@ -19,7 +19,7 @@ import {
   auditRedactedPillStyle,
   auditTableStyle,
   auditColors
-} from './ui'
+} from '../shared/ui'
 import type {
   AuditCursor,
   ListAuditEntriesInput,

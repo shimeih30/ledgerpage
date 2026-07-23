@@ -58,7 +58,20 @@ function installMockApi(overrides: MockApiOverrides = {}) {
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
     listAssignableRoles: vi.fn(),
-    listAuditEntries: vi.fn()
+    listAuditEntries: vi.fn(),
+    listProducts: vi.fn(),
+    getProduct: vi.fn(),
+    createProduct: vi.fn(),
+    updateProduct: vi.fn(),
+    deactivateProduct: vi.fn(),
+    reactivateProduct: vi.fn(),
+    listVariantsForProduct: vi.fn(),
+    getVariant: vi.fn(),
+    createVariant: vi.fn(),
+    updateVariant: vi.fn(),
+    deactivateVariant: vi.fn(),
+    reactivateVariant: vi.fn(),
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
   }
   window.ledgerpage = api
   return api

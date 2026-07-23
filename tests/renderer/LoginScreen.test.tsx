@@ -27,7 +27,20 @@ function installMockApi(login: () => Promise<LoginResult>): void {
     deactivateUser: vi.fn(),
     reactivateUser: vi.fn(),
     listAssignableRoles: vi.fn(),
-    listAuditEntries: vi.fn()
+    listAuditEntries: vi.fn(),
+    listProducts: vi.fn(),
+    getProduct: vi.fn(),
+    createProduct: vi.fn(),
+    updateProduct: vi.fn(),
+    deactivateProduct: vi.fn(),
+    reactivateProduct: vi.fn(),
+    listVariantsForProduct: vi.fn(),
+    getVariant: vi.fn(),
+    createVariant: vi.fn(),
+    updateVariant: vi.fn(),
+    deactivateVariant: vi.fn(),
+    reactivateVariant: vi.fn(),
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
   }
 }
 
@@ -36,7 +49,13 @@ describe('LoginScreen', () => {
     installMockApi(() =>
       Promise.resolve({
         success: true,
-        session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+        session: {
+          displayName: 'Ben',
+          isOwner: true,
+          canViewAuditLog: true,
+          canViewProducts: true,
+          canManageProducts: true
+        }
       })
     )
     const onLoggedIn = vi.fn()
@@ -50,7 +69,9 @@ describe('LoginScreen', () => {
     expect(onLoggedIn).toHaveBeenCalledWith({
       displayName: 'Ben',
       isOwner: true,
-      canViewAuditLog: true
+      canViewAuditLog: true,
+      canViewProducts: true,
+      canManageProducts: true
     })
   })
 
@@ -69,7 +90,13 @@ describe('LoginScreen', () => {
   it('does not submit with an empty username or password', async () => {
     const login = vi.fn().mockResolvedValue({
       success: true,
-      session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      session: {
+        displayName: 'Ben',
+        isOwner: true,
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
+      }
     })
     installMockApi(login)
     const user = userEvent.setup()
@@ -101,7 +128,13 @@ describe('LoginScreen', () => {
 
     resolveLogin({
       success: true,
-      session: { displayName: 'Ben', isOwner: true, canViewAuditLog: true }
+      session: {
+        displayName: 'Ben',
+        isOwner: true,
+        canViewAuditLog: true,
+        canViewProducts: true,
+        canManageProducts: true
+      }
     })
   })
 

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { UsersAndRolesScreen } from '../users/UsersAndRolesScreen'
 import { AuditLogScreen } from '../audit/AuditLogScreen'
+import { ProductListScreen } from '../products/ProductListScreen'
+import { ProductDetailScreen } from '../products/ProductDetailScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -9,7 +11,22 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users' | 'audit'
+type View = 'home' | 'users' | 'audit' | 'products'
+
+/**
+ * Local navigation within the Products area only — list/create/detail —
+ * kept entirely inside this shell, not a separate routing library, per
+ * the approved decision. Independent of `view` itself: switching away
+ * to another top-level view and back to 'products' resets this to
+ * 'list' (see the Products nav button's own onClick below), matching
+ * "returning to the list reloads authoritative data" — ProductListScreen
+ * fetches fresh on every mount, and switching productsRoute to a
+ * different screen kind always actually unmounts/remounts the
+ * component (a different component is rendered), so this is satisfied
+ * by construction, not a separate reload call.
+ */
+type ProductsRoute =
+  { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; productId: string }
 
 /**
  * The authenticated application area. The "Users & Roles" link is
@@ -24,6 +41,7 @@ type View = 'home' | 'users' | 'audit'
  */
 export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellProps) {
   const [view, setView] = useState<View>('home')
+  const [productsRoute, setProductsRoute] = useState<ProductsRoute>({ screen: 'list' })
 
   async function handleLogout(): Promise<void> {
     try {
@@ -100,6 +118,26 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Audit Log
             </button>
           )}
+          {session.canViewProducts && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('products')
+                setProductsRoute({ screen: 'list' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'products' ? 700 : 500
+              }}
+            >
+              Products
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -120,6 +158,28 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
 
       {view === 'users' && <UsersAndRolesScreen />}
       {view === 'audit' && <AuditLogScreen />}
+      {view === 'products' && productsRoute.screen === 'list' && (
+        <ProductListScreen
+          canManageProducts={session.canManageProducts}
+          onOpenProduct={(productId) => setProductsRoute({ screen: 'detail', productId })}
+          onCreateProduct={() => setProductsRoute({ screen: 'create' })}
+        />
+      )}
+      {view === 'products' && productsRoute.screen === 'create' && (
+        <ProductDetailScreen
+          canManageProducts={session.canManageProducts}
+          onBack={() => setProductsRoute({ screen: 'list' })}
+          onSaved={(productId) => setProductsRoute({ screen: 'detail', productId })}
+        />
+      )}
+      {view === 'products' && productsRoute.screen === 'detail' && (
+        <ProductDetailScreen
+          productId={productsRoute.productId}
+          canManageProducts={session.canManageProducts}
+          onBack={() => setProductsRoute({ screen: 'list' })}
+          onSaved={(productId) => setProductsRoute({ screen: 'detail', productId })}
+        />
+      )}
       {view === 'home' && (
         <main
           style={{

@@ -19,6 +19,20 @@ export interface SafeSessionInfo {
    * handler, never real data.
    */
   canViewAuditLog: boolean
+  /**
+   * Same cosmetic-only posture as canViewAuditLog — gates whether the
+   * renderer shows a Products nav link / read-only view at all. Real
+   * enforcement is products:*'s own requireAuthorizedCaller('products.read')
+   * checks, resolved fresh from SQLite on every call.
+   */
+  canViewProducts: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate controls on the Products screens. Real
+   * enforcement is products:*'s own requireAuthorizedCaller('products.manage')
+   * checks on each individual mutating call, never this flag.
+   */
+  canManageProducts: boolean
 }
 
 export type LoginOutcome = { success: true; session: SafeSessionInfo } | { success: false }
@@ -28,7 +42,14 @@ export type UnlockOutcome = { success: true; session: SafeSessionInfo } | { succ
 export type SessionState =
   | { state: 'logged_out' }
   | { state: 'locked'; displayName: string }
-  | { state: 'active'; displayName: string; isOwner: boolean; canViewAuditLog: boolean }
+  | {
+      state: 'active'
+      displayName: string
+      isOwner: boolean
+      canViewAuditLog: boolean
+      canViewProducts: boolean
+      canManageProducts: boolean
+    }
 
 export interface StartIdleLockTimerOptions {
   /** Idle duration after which the current session is locked. Default 5 minutes. */
@@ -99,7 +120,9 @@ function toSafeSessionInfo(user: SafeUser, roleCodes: readonly string[]): SafeSe
   return {
     displayName: user.displayName,
     isOwner: hasOwnerRole(roleCodes),
-    canViewAuditLog: can({ roleCodes }, 'audit.read')
+    canViewAuditLog: can({ roleCodes }, 'audit.read'),
+    canViewProducts: can({ roleCodes }, 'products.read'),
+    canManageProducts: can({ roleCodes }, 'products.manage')
   }
 }
 
@@ -218,7 +241,9 @@ export function createLoginService(options: LoginServiceOptions): LoginService {
         state: 'active',
         displayName: context.user.displayName,
         isOwner: hasOwnerRole(roleCodes),
-        canViewAuditLog: can({ roleCodes }, 'audit.read')
+        canViewAuditLog: can({ roleCodes }, 'audit.read'),
+        canViewProducts: can({ roleCodes }, 'products.read'),
+        canManageProducts: can({ roleCodes }, 'products.manage')
       }
     },
 
