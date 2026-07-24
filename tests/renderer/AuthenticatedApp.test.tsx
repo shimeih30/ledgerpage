@@ -48,7 +48,14 @@ function installMockApi(overrides: {
     updateVariant: vi.fn(),
     deactivateVariant: vi.fn(),
     reactivateVariant: vi.fn(),
-    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] }),
+    listInventoryItems: vi.fn().mockResolvedValue({ success: true, inventoryItems: [] }),
+    getInventoryItem: vi.fn(),
+    createInventoryItem: vi.fn(),
+    updateInventoryItem: vi.fn(),
+    deactivateInventoryItem: vi.fn(),
+    reactivateInventoryItem: vi.fn(),
+    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] })
   }
 }
 
@@ -82,7 +89,9 @@ describe('AuthenticatedApp', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         })
     })
     render(<AuthenticatedApp />)
@@ -107,7 +116,9 @@ describe('AuthenticatedApp', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         })
         .mockResolvedValue({ state: 'locked', displayName: 'Ben' })
       installMockApi({ getSessionState })
@@ -138,7 +149,9 @@ describe('AuthenticatedApp', () => {
             isOwner: true,
             canViewAuditLog: true,
             canViewProducts: true,
-            canManageProducts: true
+            canManageProducts: true,
+            canViewInventoryItems: true,
+            canManageInventoryItems: true
           }),
         touchSession
       })
@@ -165,7 +178,9 @@ describe('AuthenticatedApp', () => {
             isOwner: true,
             canViewAuditLog: true,
             canViewProducts: true,
-            canManageProducts: true
+            canManageProducts: true,
+            canViewInventoryItems: true,
+            canManageInventoryItems: true
           }
         })
       })
@@ -190,7 +205,9 @@ describe('AuthenticatedApp', () => {
             isOwner: true,
             canViewAuditLog: true,
             canViewProducts: true,
-            canManageProducts: true
+            canManageProducts: true,
+            canViewInventoryItems: true,
+            canManageInventoryItems: true
           }
         })
       })
@@ -213,7 +230,9 @@ describe('AuthenticatedApp', () => {
             isOwner: true,
             canViewAuditLog: true,
             canViewProducts: true,
-            canManageProducts: true
+            canManageProducts: true,
+            canViewInventoryItems: true,
+            canManageInventoryItems: true
           })
       })
       render(<AuthenticatedApp />)

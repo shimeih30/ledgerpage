@@ -28,7 +28,9 @@ function toAuthAppState(sessionState: SessionState): AuthAppState {
       isOwner: sessionState.isOwner,
       canViewAuditLog: sessionState.canViewAuditLog,
       canViewProducts: sessionState.canViewProducts,
-      canManageProducts: sessionState.canManageProducts
+      canManageProducts: sessionState.canManageProducts,
+      canViewInventoryItems: sessionState.canViewInventoryItems,
+      canManageInventoryItems: sessionState.canManageInventoryItems
     }
   }
 }

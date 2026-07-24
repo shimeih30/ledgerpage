@@ -33,6 +33,22 @@ export interface SafeSessionInfo {
    * checks on each individual mutating call, never this flag.
    */
   canManageProducts: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows an
+   * Inventory Items nav link / read-only view at all. Real enforcement
+   * is inventory-items:*'s own
+   * requireAuthorizedCaller('inventory_items.read') checks, resolved
+   * fresh from SQLite on every call.
+   */
+  canViewInventoryItems: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate controls on the Inventory Items screens.
+   * Real enforcement is inventory-items:*'s own
+   * requireAuthorizedCaller('inventory_items.manage') checks on each
+   * individual mutating call, never this flag.
+   */
+  canManageInventoryItems: boolean
 }
 
 export type LoginOutcome = { success: true; session: SafeSessionInfo } | { success: false }
@@ -49,6 +65,8 @@ export type SessionState =
       canViewAuditLog: boolean
       canViewProducts: boolean
       canManageProducts: boolean
+      canViewInventoryItems: boolean
+      canManageInventoryItems: boolean
     }
 
 export interface StartIdleLockTimerOptions {
@@ -122,7 +140,9 @@ function toSafeSessionInfo(user: SafeUser, roleCodes: readonly string[]): SafeSe
     isOwner: hasOwnerRole(roleCodes),
     canViewAuditLog: can({ roleCodes }, 'audit.read'),
     canViewProducts: can({ roleCodes }, 'products.read'),
-    canManageProducts: can({ roleCodes }, 'products.manage')
+    canManageProducts: can({ roleCodes }, 'products.manage'),
+    canViewInventoryItems: can({ roleCodes }, 'inventory_items.read'),
+    canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage')
   }
 }
 
@@ -243,7 +263,9 @@ export function createLoginService(options: LoginServiceOptions): LoginService {
         isOwner: hasOwnerRole(roleCodes),
         canViewAuditLog: can({ roleCodes }, 'audit.read'),
         canViewProducts: can({ roleCodes }, 'products.read'),
-        canManageProducts: can({ roleCodes }, 'products.manage')
+        canManageProducts: can({ roleCodes }, 'products.manage'),
+        canViewInventoryItems: can({ roleCodes }, 'inventory_items.read'),
+        canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage')
       }
     },
 

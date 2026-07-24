@@ -156,7 +156,14 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'updateVariant',
           'deactivateVariant',
           'reactivateVariant',
-          'listAssignableTaxCodes'
+          'listAssignableTaxCodes',
+          'listInventoryItems',
+          'getInventoryItem',
+          'createInventoryItem',
+          'updateInventoryItem',
+          'deactivateInventoryItem',
+          'reactivateInventoryItem',
+          'listAssignableUnitsOfMeasure'
         ].sort()
       )
     })

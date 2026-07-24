@@ -3,6 +3,8 @@ import { UsersAndRolesScreen } from '../users/UsersAndRolesScreen'
 import { AuditLogScreen } from '../audit/AuditLogScreen'
 import { ProductListScreen } from '../products/ProductListScreen'
 import { ProductDetailScreen } from '../products/ProductDetailScreen'
+import { InventoryItemListScreen } from '../inventoryItems/InventoryItemListScreen'
+import { InventoryItemDetailScreen } from '../inventoryItems/InventoryItemDetailScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -11,7 +13,7 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users' | 'audit' | 'products'
+type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items'
 
 /**
  * Local navigation within the Products area only — list/create/detail —
@@ -29,6 +31,14 @@ type ProductsRoute =
   { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; productId: string }
 
 /**
+ * Same local-routing posture as ProductsRoute above, applied to the
+ * Inventory Items area — list/create/detail, no routing library,
+ * reset to 'list' whenever the nav link itself is clicked.
+ */
+type InventoryItemsRoute =
+  { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; inventoryItemId: string }
+
+/**
  * The authenticated application area. The "Users & Roles" link is
  * rendered only when `session.isOwner` is true, and the "Audit Log"
  * link only when `session.canViewAuditLog` is true — both purely
@@ -42,6 +52,9 @@ type ProductsRoute =
 export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellProps) {
   const [view, setView] = useState<View>('home')
   const [productsRoute, setProductsRoute] = useState<ProductsRoute>({ screen: 'list' })
+  const [inventoryItemsRoute, setInventoryItemsRoute] = useState<InventoryItemsRoute>({
+    screen: 'list'
+  })
 
   async function handleLogout(): Promise<void> {
     try {
@@ -138,6 +151,26 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Products
             </button>
           )}
+          {session.canViewInventoryItems && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('inventory-items')
+                setInventoryItemsRoute({ screen: 'list' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'inventory-items' ? 700 : 500
+              }}
+            >
+              Inventory Items
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -178,6 +211,34 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
           canManageProducts={session.canManageProducts}
           onBack={() => setProductsRoute({ screen: 'list' })}
           onSaved={(productId) => setProductsRoute({ screen: 'detail', productId })}
+        />
+      )}
+      {view === 'inventory-items' && inventoryItemsRoute.screen === 'list' && (
+        <InventoryItemListScreen
+          canManageInventoryItems={session.canManageInventoryItems}
+          onOpenInventoryItem={(inventoryItemId) =>
+            setInventoryItemsRoute({ screen: 'detail', inventoryItemId })
+          }
+          onCreateInventoryItem={() => setInventoryItemsRoute({ screen: 'create' })}
+        />
+      )}
+      {view === 'inventory-items' && inventoryItemsRoute.screen === 'create' && (
+        <InventoryItemDetailScreen
+          canManageInventoryItems={session.canManageInventoryItems}
+          onBack={() => setInventoryItemsRoute({ screen: 'list' })}
+          onSaved={(inventoryItemId) =>
+            setInventoryItemsRoute({ screen: 'detail', inventoryItemId })
+          }
+        />
+      )}
+      {view === 'inventory-items' && inventoryItemsRoute.screen === 'detail' && (
+        <InventoryItemDetailScreen
+          inventoryItemId={inventoryItemsRoute.inventoryItemId}
+          canManageInventoryItems={session.canManageInventoryItems}
+          onBack={() => setInventoryItemsRoute({ screen: 'list' })}
+          onSaved={(inventoryItemId) =>
+            setInventoryItemsRoute({ screen: 'detail', inventoryItemId })
+          }
         />
       )}
       {view === 'home' && (

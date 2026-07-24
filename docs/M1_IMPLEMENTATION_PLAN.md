@@ -649,6 +649,40 @@ unit-conversion factors (Slice 15 and later). No accounting posting.
 - ~150 items can be created and listed without a noticeable UI delay
   (sanity check against the stated MVP scale).
 
+**Decisions approved for this slice (owner review, following the
+pre-implementation plan above).**
+
+1. **Inventory-item code.** User-entered (no numbering rule added, per
+   approved decision — unlike `products.code`), required, trimmed and
+   normalized to uppercase, unique within the company, and immutable
+   after creation. `UpdateInventoryItemInput` has no `code` field at
+   all.
+2. **Permissions.** `owner`, `executive`, and `operations` all receive
+   both `inventory_items.read` and `inventory_items.manage`; `finance`
+   receives `inventory_items.read` only — mirroring Products' own
+   matrix exactly. Two new cosmetic session flags —
+   `canViewInventoryItems`, `canManageInventoryItems` — gate renderer
+   nav/UI visibility only; real enforcement remains
+   `requireAuthorizedCaller`, resolved fresh from SQLite on every call.
+3. **Category.** Required, trimmed free-text field. No category
+   reference table or fixed enum was introduced.
+4. **Quantities.** `minimumStock`, `reorderQuantity`, and
+   `leadTimeDays` are required, non-negative integers (rejecting
+   decimals, negative/plus signs, whitespace-only, `NaN`, `Infinity`,
+   and unsafe integers). `maximumStock` is nullable; when supplied, it
+   must be `>= minimumStock`. No other cross-field restriction was
+   added. No floating-point quantity arithmetic anywhere — these are
+   plain integer counts, not currency amounts.
+5. **Unit of measure.** Required. A new assignment (at creation, or
+   when an update changes the value) must reference an active unit;
+   an update that leaves the value unchanged never re-validates it, so
+   an existing reference survives a later deactivation of that unit
+   and remains visible as historical/current context. Once changed away
+   from an inactive unit, it cannot be selected again.
+6. **Action names.** `inventory_items.read`, `inventory_items.manage`.
+7. **Lead time.** Non-negative integer with no arbitrary upper limit
+   beyond safe-integer validation.
+
 ---
 
 ### Slice 13 — Suppliers

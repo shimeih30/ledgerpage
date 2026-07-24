@@ -156,7 +156,9 @@ describe('registerLoginHandlers', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         }
       })
       expect(Object.keys(result as object)).not.toContain('sessionId')
@@ -190,7 +192,9 @@ describe('registerLoginHandlers', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       })
     })
   })

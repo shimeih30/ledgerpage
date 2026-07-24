@@ -69,7 +69,9 @@ describe('loginService', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         }
       })
       expect(service.getSessionState(db)).toEqual({
@@ -78,7 +80,9 @@ describe('loginService', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       })
     }, 20000)
 
@@ -104,7 +108,9 @@ describe('loginService', () => {
           isOwner: false,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: false
+          canManageProducts: false,
+          canViewInventoryItems: true,
+          canManageInventoryItems: false
         }
       })
     }, 20000)
@@ -182,7 +188,9 @@ describe('loginService', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         }
       })
     }, 20000)
@@ -213,7 +221,9 @@ describe('loginService', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       })
 
       db.delete(userRoles).where(eq(userRoles.userId, ownerId)).run()
@@ -227,7 +237,9 @@ describe('loginService', () => {
         isOwner: false,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: false
+        canManageProducts: false,
+        canViewInventoryItems: true,
+        canManageInventoryItems: false
       })
     }, 20000)
   })
@@ -254,7 +266,9 @@ describe('loginService', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         }
       })
       expect(service.getSessionState(db)).toEqual({
@@ -263,7 +277,9 @@ describe('loginService', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       })
     }, 20000)
 
@@ -315,7 +331,9 @@ describe('loginService', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       })
       service.dispose()
     }, 20000)
@@ -380,7 +398,9 @@ describe('loginService', () => {
           isOwner: false,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: false
+          canManageProducts: false,
+          canViewInventoryItems: true,
+          canManageInventoryItems: false
         }
       })
       expect(service.getSessionState(db)).toEqual({
@@ -389,7 +409,9 @@ describe('loginService', () => {
         isOwner: false,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: false
+        canManageProducts: false,
+        canViewInventoryItems: true,
+        canManageInventoryItems: false
       })
     }, 20000)
 
@@ -415,7 +437,9 @@ describe('loginService', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         }
       })
     }, 20000)
@@ -436,7 +460,9 @@ describe('loginService', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       })
     }, 20000)
 

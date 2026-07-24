@@ -40,7 +40,14 @@ function installMockApi(login: () => Promise<LoginResult>): void {
     updateVariant: vi.fn(),
     deactivateVariant: vi.fn(),
     reactivateVariant: vi.fn(),
-    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] })
+    listAssignableTaxCodes: vi.fn().mockResolvedValue({ success: true, taxCodes: [] }),
+    listInventoryItems: vi.fn().mockResolvedValue({ success: true, inventoryItems: [] }),
+    getInventoryItem: vi.fn(),
+    createInventoryItem: vi.fn(),
+    updateInventoryItem: vi.fn(),
+    deactivateInventoryItem: vi.fn(),
+    reactivateInventoryItem: vi.fn(),
+    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] })
   }
 }
 
@@ -54,7 +61,9 @@ describe('LoginScreen', () => {
           isOwner: true,
           canViewAuditLog: true,
           canViewProducts: true,
-          canManageProducts: true
+          canManageProducts: true,
+          canViewInventoryItems: true,
+          canManageInventoryItems: true
         }
       })
     )
@@ -71,7 +80,9 @@ describe('LoginScreen', () => {
       isOwner: true,
       canViewAuditLog: true,
       canViewProducts: true,
-      canManageProducts: true
+      canManageProducts: true,
+      canViewInventoryItems: true,
+      canManageInventoryItems: true
     })
   })
 
@@ -95,7 +106,9 @@ describe('LoginScreen', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       }
     })
     installMockApi(login)
@@ -133,7 +146,9 @@ describe('LoginScreen', () => {
         isOwner: true,
         canViewAuditLog: true,
         canViewProducts: true,
-        canManageProducts: true
+        canManageProducts: true,
+        canViewInventoryItems: true,
+        canManageInventoryItems: true
       }
     })
   })
