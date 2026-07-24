@@ -14,6 +14,7 @@ import { registerLoginHandlers } from './ipc/registerLoginHandlers'
 import { registerUserManagementHandlers } from './ipc/registerUserManagementHandlers'
 import { registerAuditHandlers } from './ipc/registerAuditHandlers'
 import { registerProductHandlers } from './ipc/registerProductHandlers'
+import { registerInventoryItemHandlers } from './ipc/registerInventoryItemHandlers'
 import { initializeDatabase } from './db/initializeDatabase'
 import { resolveMigrationsFolder } from './db/resolveMigrationsFolder'
 import { showStartupErrorAndQuit } from './startup/showStartupError'
@@ -149,6 +150,12 @@ if (isPrimaryInstance) {
     // registerProductHandlers.ts) never trusts anything the renderer
     // supplies, including session.canViewProducts/canManageProducts.
     registerProductHandlers({ context: navigationContext, db: drizzleDb, loginService })
+    // Same reuse posture as the two handlers above: inventory-items:*'s
+    // own authorization (via requireAuthorizedCaller inside
+    // registerInventoryItemHandlers.ts) never trusts anything the
+    // renderer supplies, including
+    // session.canViewInventoryItems/canManageInventoryItems.
+    registerInventoryItemHandlers({ context: navigationContext, db: drizzleDb, loginService })
 
     // Idle-lock timer: started once here, for the app's lifetime, disposed
     // in before-quit below. Locks (never destroys) the current session

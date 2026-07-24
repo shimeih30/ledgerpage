@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 11
+## Current status: M1, Slice 12
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -36,17 +36,26 @@ and Finance. Slice 11 adds the first master-data module: a product catalog
 (manufactured goods and services, each with one or more variants), with
 system-allocated product codes, USD minor-unit pricing, an optional
 active-tax-code assignment per variant, and Owner/Executive/Operations
-edit access with Finance limited to read-only.
+edit access with Finance limited to read-only. Slice 12 adds the second master-data
+module: an inventory-item catalog for everything purchased or consumed
+internally (ingredients, packaging, other consumables) — user-entered,
+immutable item codes, a required active unit-of-measure assignment (with
+the same historical-reference-preservation behavior Slice 11 established
+for tax codes), and minimum/reorder/maximum stock thresholds plus a lead
+time, all as pure master data with no quantities on hand yet. Owner,
+Executive, and Operations again receive edit access, with Finance limited
+to read-only.
 
 **Intentionally absent at this stage:** approval workflows (Slice 30), any
 retention/archival policy for audit rows beyond keeping everything,
 fine-grained (per-field) permissions (roles stay coarse-grained, per the
 confirmed decision), SSO, any way to change an existing user's role once
-created, recipes, inventory linkage, sales pricing history, discounts,
-customers, suppliers, orders, production, expenses, accounts, exchange
-rates, unit conversions, persistent sessions across app restarts, and any
-database or filesystem access exposed to the renderer beyond the thirty
-narrow, typed methods described below.
+created, recipes, stock quantities/lots/movements, supplier links and
+supplier-item pricing, sales pricing history, discounts, customers,
+suppliers, orders, production, expenses, accounts, exchange rates, unit
+conversions, persistent sessions across app restarts, and any database or
+filesystem access exposed to the renderer beyond the thirty-seven narrow,
+typed methods described below.
 
 ### Authentication foundations
 
@@ -391,6 +400,83 @@ linkage (a manufactured variant doesn't yet know what it consumes —
 adding a nullable FK toward a not-yet-existing inventory table now would
 be guessing at a later slice's shape), sales pricing history and
 discounts, and any accounting posting (this is non-financial master data;
+nothing here touches a ledger).
+
+### Inventory items
+
+The second master-data module: the item catalog for everything a business
+purchases or consumes internally — ingredients, packaging, and other
+consumables (`item_type`, one of `ingredient` / `packaging` / `consumable`
+/ `other`). No quantities-on-hand, lots, or stock movements exist yet
+(Slice 15); this is pure item-master data, mirroring Products' own
+non-financial posture.
+
+`inventory_items.code` is, by approved decision, ordinary user-entered
+input — unlike `products.code`, no numbering rule was added for this
+table. It is trimmed, normalized to uppercase, unique within the company,
+and immutable after creation: `UpdateInventoryItemInput`
+(`shared/ipc/inventoryItems.ts`) has no `code` field at all, a structural
+guarantee rather than a runtime-rejected one — `itemType` is excluded from
+that same type for the identical reason. `category` is a required,
+trimmed free-text field; no fixed enum or reference table was introduced
+for it, per the approved decision.
+
+`unit_of_measure_id` is required — unlike `product_variants.tax_code_id`,
+which is nullable — and, once set, is never cleared or cascaded by a
+later deactivation of that unit, mirroring `tax_code_id`'s own
+historical-reference-stability precedent applied to a required rather
+than optional column. A _new_ assignment (at creation, or when an update
+actually changes the value) must reference a currently active unit; an
+update that leaves `unitOfMeasureId` unchanged never re-validates it, so
+an item already referencing a since-deactivated unit keeps working
+normally until someone deliberately picks a different one. `SafeInventoryItem`
+carries a server-resolved `unitOfMeasureLabel` (the referenced unit's own
+`code`, e.g. `"kg"`, via a `LEFT JOIN` in `inventoryItemService`'s read
+functions) so the edit form can still show "currently references kg"
+after kg is deactivated — without kg ever becoming a new, offerable
+choice again in the active-only dropdown; the moment the user picks a
+different option, that historical option disappears entirely, and the
+reference is never cleared merely by editing an unrelated field.
+Assignable units are read through one new, narrow IPC method,
+`listAssignableUnitsOfMeasure` — Slice 4's reference-data tables had no
+dedicated IPC surface of their own until now — returning only `{id, code,
+name, category}` for active units, gated by `inventory_items.read`; no
+unit-management (create/update/deactivate) surface is exposed through it.
+
+`minimumStock`, `reorderQuantity`, and `leadTimeDays` are required,
+non-negative integers — decimals, negative or explicit-plus signs,
+whitespace-only input, `NaN`, `Infinity`, and unsafe integers are all
+rejected, both in the renderer's own parsing
+(`inventoryItemQuantity.ts`, a dedicated copy for this domain rather than
+reusing `productDecimal.ts`'s `parseNonNegativeInteger`, matching this
+codebase's established one-copy-per-domain convention for validation
+helpers) and again independently in `inventoryItemValidation.ts` on the
+main-process side. `maximumStock` is nullable — an empty field means "no
+maximum set" — but when present must be a non-negative integer no less
+than `minimumStock`; this cross-field rule is enforced in the service
+layer and, redundantly, as a real database `CHECK` constraint, so a
+direct-SQL bypass is covered as well as the ordinary application path. No
+quantity field here is ever money — there is no currency, minor-unit
+conversion, or floating-point arithmetic anywhere on this table.
+
+Deactivating an item changes only that item's own flag; reactivating is
+the same, reversible, explicit action in the other direction. Owner,
+Executive, and Operations all receive `inventory_items.read` and
+`inventory_items.manage`; Finance receives `inventory_items.read` only —
+mirroring Products' own matrix exactly. Every
+create/update/deactivate/reactivate writes exactly one audit row in the
+same transaction as the business mutation, via the same
+`auditService.record` Slice 10 introduced; a no-op mutation writes none.
+`canViewInventoryItems` and `canManageInventoryItems` are cosmetic-only
+session flags, exactly like `canViewProducts`/`canManageProducts` before
+them — real enforcement is `requireAuthorizedCaller`, resolved fresh from
+SQLite on every single call in the main process, regardless of what the
+renderer shows or believes.
+
+**Intentionally excluded from this slice:** stock quantities, lots, and
+stock movements (Slice 15), supplier links and supplier-item pricing
+(Slice 13), any unit-conversion factor between purchase and consumption
+units, and any accounting posting (this is non-financial master data;
 nothing here touches a ledger).
 
 ### First-run setup wizard

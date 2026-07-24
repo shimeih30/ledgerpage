@@ -8,6 +8,8 @@ import { seedReferenceData } from '../../../src/main/db/seedReferenceData'
 import { seedRoles } from '../../../src/main/db/seedRoles'
 import { createCompany } from '../../../src/main/db/companyService'
 import { createTaxCode } from '../../../src/main/db/taxCodeService'
+import { createProduct } from '../../../src/main/db/productService'
+import { createVariant } from '../../../src/main/db/productVariantService'
 import { createUser } from '../../../src/main/auth/userService'
 import { hashPassword } from '../../../src/main/auth/passwordHashing'
 import { userRoles } from '../../../src/main/db/schema'
@@ -645,6 +647,379 @@ describe('Slice 11 migration (0005_products_and_variants)', () => {
       ]
 
       const diffOutput = execFileSync('git', ['diff', 'm1-slice-10', '--', ...filesToCheck], {
+        cwd: process.cwd(),
+        encoding: 'utf-8'
+      })
+
+      expect(diffOutput.trim()).toBe('')
+    })
+  })
+})
+
+describe('Slice 12 migration (0006_inventory_items)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = createTempDir('ledgerpage-migration-0006')
+  })
+
+  afterEach(() => {
+    removeTempDir(dir)
+  })
+
+  describe('fresh database', () => {
+    it('applies all migrations 0000-0006 cleanly, including inventory_items', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tables = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tables.map((t) => t.name)).toContain('inventory_items')
+
+      rawDb.close()
+    })
+
+    it('rejects a second item with a duplicate (company_id, code) pair', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      const insertItem = () =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES (?, 'primary_company', 'FLOUR', 'Flour', 'Dry goods', 'ingredient', 'uom_kg', 0, 0, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(`item_${Math.random()}`, Date.now(), Date.now())
+
+      insertItem()
+      expect(insertItem).toThrow(/UNIQUE constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the item type CHECK constraint rejects an out-of-range value', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i1', 'primary_company', 'FLOUR', 'Flour', 'Dry goods', 'bogus', 'uom_kg', 0, 0, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the minimum_stock, reorder_quantity, and lead_time_days CHECK constraints reject negative values', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i1', 'primary_company', 'FLOUR', 'Flour', 'Dry goods', 'ingredient', 'uom_kg', -1, 0, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i2', 'primary_company', 'SUGAR', 'Sugar', 'Dry goods', 'ingredient', 'uom_kg', 0, -1, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i3', 'primary_company', 'SALT', 'Salt', 'Dry goods', 'ingredient', 'uom_kg', 0, 0, -1, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the maximum_stock CHECK constraint allows null but rejects a negative value', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, maximum_stock, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i1', 'primary_company', 'FLOUR', 'Flour', 'Dry goods', 'ingredient', 'uom_kg', 0, 0, NULL, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).not.toThrow()
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, maximum_stock, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i2', 'primary_company', 'SUGAR', 'Sugar', 'Dry goods', 'ingredient', 'uom_kg', 0, 0, -1, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the maximum_stock >= minimum_stock CHECK constraint rejects a lower maximum_stock', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, maximum_stock, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i1', 'primary_company', 'FLOUR', 'Flour', 'Dry goods', 'ingredient', 'uom_kg', 10, 0, 5, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, maximum_stock, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i2', 'primary_company', 'SUGAR', 'Sugar', 'Dry goods', 'ingredient', 'uom_kg', 5, 0, 10, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).not.toThrow()
+
+      rawDb.close()
+    })
+
+    it('rejects a company_id other than the singleton', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i1', 'some_other_company', 'FLOUR', 'Flour', 'Dry goods', 'ingredient', 'uom_kg', 0, 0, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow()
+
+      rawDb.close()
+    })
+
+    it('the unit_of_measure_id foreign key rejects a reference to a nonexistent unit', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO inventory_items
+             (id, company_id, code, name, category, item_type, unit_of_measure_id, minimum_stock, reorder_quantity, lead_time_days, lot_tracked, expiry_tracked, is_active, created_at, updated_at)
+             VALUES ('i1', 'primary_company', 'FLOUR', 'Flour', 'Dry goods', 'ingredient', 'does-not-exist', 0, 0, 0, 0, 0, 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow(/FOREIGN KEY constraint failed/)
+
+      rawDb.close()
+    })
+  })
+
+  describe('upgrade from an approved Slice 11 database', () => {
+    it('a database with only migrations 0000-0005 applied upgrades cleanly through 0006, preserving all existing data', async () => {
+      const dbPath = join(dir, 'ledgerpage.db')
+      const truncatedMigrationsDir = join(dir, 'migrations-through-0005')
+      buildTruncatedMigrationsFolder(REAL_MIGRATIONS_FOLDER, truncatedMigrationsDir, 6)
+
+      // Simulate an approved Slice 11 install: only 0000-0005 applied.
+      const rawDb = createDatabaseConnection(dbPath)
+      runMigrations(rawDb, truncatedMigrationsDir)
+
+      const tablesBeforeUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesBeforeUpgrade.map((t) => t.name)).not.toContain('inventory_items')
+
+      // Seed real Slice 5-11 data on this pre-Slice-12 database. Every
+      // table used here already exists at 0000-0005, so the real,
+      // audit-writing service functions are used directly rather than a
+      // bypassing direct insert.
+      seedReferenceData(rawDb)
+      seedRoles(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb) as AppDb
+      createCompany(
+        db,
+        {
+          name: 'Farmer Ben Sauces',
+          address: '1 Main St',
+          contactDetails: 'ben@example.com',
+          currencyId: 'currency_usd'
+        },
+        new Date()
+      )
+      const now = new Date()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_product', 'primary_company', 'product', 'PRD', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(now.getTime(), now.getTime())
+      const taxCode = createTaxCode(
+        db,
+        { code: 'STD', name: 'Standard', category: 'standard' },
+        { type: 'system' }
+      )
+      const passwordHash = await hashPassword(REAL_PASSWORD)
+      const owner = db.transaction((tx) =>
+        createUser(tx, { loginIdentifier: 'ben', displayName: 'Ben', passwordHash })
+      )
+      db.insert(userRoles)
+        .values({ userId: owner.id, roleId: 'role_owner', createdAt: new Date() })
+        .run()
+      const product = createProduct(
+        db,
+        { name: 'Chilli Sauce', type: 'manufactured' },
+        { type: 'system' }
+      )
+      const variant = createVariant(
+        db,
+        { productId: product.id, code: '100ML', name: '100 ml bottle', sellingPriceMinor: 1029 },
+        { type: 'system' }
+      )
+
+      const auditRowCountBeforeUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      expect(auditRowCountBeforeUpgrade).toBeGreaterThan(0)
+
+      // Now upgrade: apply the full, real migrations folder (0000-0006)
+      // against this same, already-populated database file.
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tablesAfterUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('inventory_items')
+
+      // Every table's pre-existing data survives the upgrade intact.
+      const companyRow = rawDb.prepare('SELECT * FROM company').get() as
+        { name: string } | undefined
+      expect(companyRow?.name).toBe('Farmer Ben Sauces')
+
+      const taxCodeRow = rawDb.prepare('SELECT * FROM tax_codes WHERE id = ?').get(taxCode.id) as
+        { code: string } | undefined
+      expect(taxCodeRow?.code).toBe('STD')
+
+      const userRow = rawDb.prepare('SELECT * FROM users WHERE id = ?').get(owner.id) as
+        { login_identifier: string } | undefined
+      expect(userRow?.login_identifier).toBe('ben')
+
+      const roleRows = rawDb.prepare('SELECT * FROM roles').all() as { code: string }[]
+      expect(roleRows.map((r) => r.code).sort()).toEqual(
+        ['owner', 'executive', 'operations', 'finance'].sort()
+      )
+
+      const productRow = rawDb.prepare('SELECT * FROM products WHERE id = ?').get(product.id) as
+        { code: string } | undefined
+      expect(productRow?.code).toBe('PRD-000001')
+
+      const variantRow = rawDb
+        .prepare('SELECT * FROM product_variants WHERE id = ?')
+        .get(variant.id) as { code: string } | undefined
+      expect(variantRow?.code).toBe('100ML')
+
+      const auditRowCountAfterUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      expect(auditRowCountAfterUpgrade).toBe(auditRowCountBeforeUpgrade)
+
+      rawDb.close()
+    }, 20000)
+  })
+
+  describe('no pre-existing migration was modified', () => {
+    it('migrations 0000-0005 remain byte-identical to their state at the approved m1-slice-11 tag', () => {
+      const filesToCheck = [
+        'migrations/0000_reference_data_tables.sql',
+        'migrations/0001_company_and_numbering_rules.sql',
+        'migrations/0002_tax_configuration.sql',
+        'migrations/0003_authentication_foundations.sql',
+        'migrations/0004_audit_logging.sql',
+        'migrations/0005_products_and_variants.sql'
+      ]
+
+      const diffOutput = execFileSync('git', ['diff', 'm1-slice-11', '--', ...filesToCheck], {
         cwd: process.cwd(),
         encoding: 'utf-8'
       })

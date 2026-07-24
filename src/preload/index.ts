@@ -82,6 +82,25 @@ import {
   type UpdateVariantResult,
   type VariantIdInput
 } from '../shared/ipc/products'
+import {
+  INVENTORY_ITEMS_CREATE_CHANNEL,
+  INVENTORY_ITEMS_DEACTIVATE_CHANNEL,
+  INVENTORY_ITEMS_GET_CHANNEL,
+  INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL,
+  INVENTORY_ITEMS_LIST_CHANNEL,
+  INVENTORY_ITEMS_REACTIVATE_CHANNEL,
+  INVENTORY_ITEMS_UPDATE_CHANNEL,
+  type CreateInventoryItemInput,
+  type CreateInventoryItemResult,
+  type GetInventoryItemResult,
+  type InventoryItemIdInput,
+  type LedgerPageInventoryItemsApi,
+  type ListAssignableUnitsOfMeasureResult,
+  type ListInventoryItemsResult,
+  type MutateInventoryItemResult,
+  type UpdateInventoryItemInput,
+  type UpdateInventoryItemResult
+} from '../shared/ipc/inventoryItems'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -121,7 +140,8 @@ const api: LedgerPageApi &
   LedgerPageLoginApi &
   LedgerPageUsersApi &
   LedgerPageAuditApi &
-  LedgerPageProductsApi = {
+  LedgerPageProductsApi &
+  LedgerPageInventoryItemsApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -205,7 +225,28 @@ const api: LedgerPageApi &
     ipcRenderer.invoke(PRODUCT_VARIANTS_REACTIVATE_CHANNEL, input),
 
   listAssignableTaxCodes: (): Promise<ListAssignableTaxCodesResult> =>
-    ipcRenderer.invoke(PRODUCTS_LIST_ASSIGNABLE_TAX_CODES_CHANNEL)
+    ipcRenderer.invoke(PRODUCTS_LIST_ASSIGNABLE_TAX_CODES_CHANNEL),
+
+  listInventoryItems: (): Promise<ListInventoryItemsResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_LIST_CHANNEL),
+
+  getInventoryItem: (input: InventoryItemIdInput): Promise<GetInventoryItemResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_GET_CHANNEL, input),
+
+  createInventoryItem: (input: CreateInventoryItemInput): Promise<CreateInventoryItemResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_CREATE_CHANNEL, input),
+
+  updateInventoryItem: (input: UpdateInventoryItemInput): Promise<UpdateInventoryItemResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_UPDATE_CHANNEL, input),
+
+  deactivateInventoryItem: (input: InventoryItemIdInput): Promise<MutateInventoryItemResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_DEACTIVATE_CHANNEL, input),
+
+  reactivateInventoryItem: (input: InventoryItemIdInput): Promise<MutateInventoryItemResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_REACTIVATE_CHANNEL, input),
+
+  listAssignableUnitsOfMeasure: (): Promise<ListAssignableUnitsOfMeasureResult> =>
+    ipcRenderer.invoke(INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

@@ -40,7 +40,14 @@ const EXPECTED_KEYS = [
   'updateVariant',
   'deactivateVariant',
   'reactivateVariant',
-  'listAssignableTaxCodes'
+  'listAssignableTaxCodes',
+  'listInventoryItems',
+  'getInventoryItem',
+  'createInventoryItem',
+  'updateInventoryItem',
+  'deactivateInventoryItem',
+  'reactivateInventoryItem',
+  'listAssignableUnitsOfMeasure'
 ]
 
 describe('preload API surface', () => {
@@ -329,5 +336,65 @@ describe('preload API surface', () => {
     await api.deactivateVariant(input)
 
     expect(invoke).toHaveBeenCalledWith(PRODUCT_VARIANTS_DEACTIVATE_CHANNEL, input)
+  })
+
+  it('listInventoryItems invokes exactly the inventory-items:list channel, with no arguments', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_ITEMS_LIST_CHANNEL } = await import('../../src/shared/ipc/inventoryItems')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listInventoryItems: () => Promise<unknown>
+    }
+    await api.listInventoryItems()
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_ITEMS_LIST_CHANNEL)
+  })
+
+  it('createInventoryItem forwards its input to the inventory-items:create channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_ITEMS_CREATE_CHANNEL } = await import('../../src/shared/ipc/inventoryItems')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createInventoryItem: (input: unknown) => Promise<unknown>
+    }
+    const input = {
+      code: 'FLOUR',
+      name: 'Flour',
+      category: 'Dry goods',
+      itemType: 'ingredient',
+      unitOfMeasureId: 'uom_kg',
+      minimumStock: 10,
+      reorderQuantity: 20,
+      leadTimeDays: 3
+    }
+    await api.createInventoryItem(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_ITEMS_CREATE_CHANNEL, input)
+  })
+
+  it('updateInventoryItem forwards its input to the inventory-items:update channel unchanged -- structurally never a code or itemType field, since UpdateInventoryItemInput has no such properties', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_ITEMS_UPDATE_CHANNEL } = await import('../../src/shared/ipc/inventoryItems')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      updateInventoryItem: (input: unknown) => Promise<unknown>
+    }
+    const input = { inventoryItemId: 'inventory_item_1', name: 'New name' }
+    await api.updateInventoryItem(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_ITEMS_UPDATE_CHANNEL, input)
+  })
+
+  it('listAssignableUnitsOfMeasure invokes exactly the inventory-items:list-assignable-units channel, with no arguments', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL } =
+      await import('../../src/shared/ipc/inventoryItems')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listAssignableUnitsOfMeasure: () => Promise<unknown>
+    }
+    await api.listAssignableUnitsOfMeasure()
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL)
   })
 })

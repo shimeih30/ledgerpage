@@ -583,3 +583,80 @@ export const productVariants = sqliteTable(
     check('product_variants_min_stock_non_negative', sql`${t.minimumFinishedStockLevel} >= 0`)
   ]
 )
+
+/**
+ * Slice 12: the item master catalog for everything purchased or
+ * consumed internally (ingredients, packaging, other consumables) — no
+ * quantities-on-hand, lots, or supplier links yet (Slices 13/15).
+ *
+ * code is ordinary user-entered input, unique within the company (this
+ * app's one company) and immutable after creation — approved decision:
+ * unlike products.code, no numbering rule is added for this table.
+ * inventoryItemService.ts never accepts a code value on update, a
+ * structural guarantee at the input-type level, not merely a
+ * runtime-rejected one.
+ *
+ * unit_of_measure_id is required (unlike product_variants.tax_code_id,
+ * which is nullable) and, once set, is never cleared or cascaded by a
+ * later deactivation of that unit — mirroring tax_code_id's own
+ * historical-reference-stability precedent exactly, just applied to a
+ * required rather than optional column. New assignments must reference
+ * a currently-active unit (enforced in inventoryItemService.ts, not
+ * expressible as a CHECK constraint here since SQLite CHECK constraints
+ * cannot see another table's row).
+ *
+ * minimum_stock, reorder_quantity, and lead_time_days are required,
+ * non-negative integers; maximum_stock is nullable but, when present,
+ * must be non-negative and >= minimum_stock — the cross-field half of
+ * that rule is enforced in the service layer, since SQLite CHECK
+ * constraints can reference other columns on the same row but the
+ * combination here (nullable column compared conditionally) is clearer
+ * expressed procedurally; the non-negative half of each is still a real
+ * CHECK constraint below, so direct-SQL bypass is covered for that part.
+ */
+export const INVENTORY_ITEM_TYPES = ['ingredient', 'packaging', 'consumable', 'other'] as const
+
+export const inventoryItems = sqliteTable(
+  'inventory_items',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    category: text('category').notNull(),
+    itemType: text('item_type').notNull(),
+    unitOfMeasureId: text('unit_of_measure_id')
+      .notNull()
+      .references(() => unitsOfMeasure.id),
+    minimumStock: integer('minimum_stock').notNull().default(0),
+    reorderQuantity: integer('reorder_quantity').notNull().default(0),
+    maximumStock: integer('maximum_stock'),
+    leadTimeDays: integer('lead_time_days').notNull().default(0),
+    lotTracked: integer('lot_tracked', { mode: 'boolean' }).notNull().default(false),
+    expiryTracked: integer('expiry_tracked', { mode: 'boolean' }).notNull().default(false),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('inventory_items_company_code_unique').on(t.companyId, t.code),
+    check('inventory_items_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`),
+    check(
+      'inventory_items_item_type_valid',
+      sql`${t.itemType} IN ('ingredient', 'packaging', 'consumable', 'other')`
+    ),
+    check('inventory_items_minimum_stock_non_negative', sql`${t.minimumStock} >= 0`),
+    check('inventory_items_reorder_quantity_non_negative', sql`${t.reorderQuantity} >= 0`),
+    check('inventory_items_lead_time_days_non_negative', sql`${t.leadTimeDays} >= 0`),
+    check(
+      'inventory_items_maximum_stock_non_negative',
+      sql`${t.maximumStock} IS NULL OR ${t.maximumStock} >= 0`
+    ),
+    check(
+      'inventory_items_maximum_stock_gte_minimum_stock',
+      sql`${t.maximumStock} IS NULL OR ${t.maximumStock} >= ${t.minimumStock}`
+    )
+  ]
+)

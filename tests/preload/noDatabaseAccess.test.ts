@@ -69,7 +69,14 @@ describe('preload API surface after Slice 3', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -79,7 +86,15 @@ describe('preload API surface after Slice 3', () => {
  * Slice 4 adds reference-data tables and a seeding service. This test
  * exists to make explicit that none of that reaches the renderer either —
  * no currency/unit/payment-method/expense-category read or write API of
- * any kind.
+ * any kind — except for one narrow, deliberate exception introduced by
+ * Slice 12: listAssignableUnitsOfMeasure, a read-only lookup of {id,
+ * code, name, category} for active units of measure only, needed for
+ * the inventory item form's unit-of-measure dropdown (Slice 4 itself
+ * shipped no reference-data UI/IPC surface at all). This is not a
+ * general reference-data management API — no create/update/deactivate/
+ * reactivate method is exposed for units of measure or any other
+ * reference-data table, and no decimal-places or sort-order internal is
+ * ever included in its result.
  */
 describe('preload API surface after Slice 4', () => {
   beforeEach(() => {
@@ -87,11 +102,13 @@ describe('preload API surface after Slice 4', () => {
     exposeInMainWorld.mockClear()
   })
 
-  it('does not expose any reference-data method to the renderer', async () => {
+  it('does not expose any reference-data method to the renderer, other than the one narrow, justified Slice 12 exception', async () => {
     await import('../../src/preload/index')
 
     const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
-    const exposedKeys = Object.keys(api).map((key) => key.toLowerCase())
+    const exposedKeys = Object.keys(api)
+      .filter((key) => key !== 'listAssignableUnitsOfMeasure')
+      .map((key) => key.toLowerCase())
 
     for (const forbidden of [
       'currency',
@@ -142,7 +159,14 @@ describe('preload API surface after Slice 4', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -214,7 +238,14 @@ describe('preload API surface after Slice 5', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -287,7 +318,14 @@ describe('preload API surface after Slice 6', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -372,7 +410,14 @@ describe('preload API surface after Slice 7', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -457,7 +502,14 @@ describe('preload API surface after Slice 8', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -539,7 +591,14 @@ describe('preload API surface after Slice 9', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })
@@ -616,7 +675,14 @@ describe('preload API surface after Slice 10', () => {
         'updateVariant',
         'deactivateVariant',
         'reactivateVariant',
-        'listAssignableTaxCodes'
+        'listAssignableTaxCodes',
+        'listInventoryItems',
+        'getInventoryItem',
+        'createInventoryItem',
+        'updateInventoryItem',
+        'deactivateInventoryItem',
+        'reactivateInventoryItem',
+        'listAssignableUnitsOfMeasure'
       ].sort()
     )
   })

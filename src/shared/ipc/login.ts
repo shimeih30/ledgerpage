@@ -48,6 +48,21 @@ export interface SafeSessionInfo {
    * checks on each individual mutating call.
    */
   canManageProducts: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows an
+   * Inventory Items nav link / read-only view. Real enforcement is
+   * inventory-items:*'s own
+   * requireAuthorizedCaller('inventory_items.read') checks.
+   */
+  canViewInventoryItems: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate controls on the Inventory Items screens.
+   * Real enforcement is inventory-items:*'s own
+   * requireAuthorizedCaller('inventory_items.manage') checks on each
+   * individual mutating call.
+   */
+  canManageInventoryItems: boolean
 }
 
 export type LoginResult = { success: true; session: SafeSessionInfo } | { success: false }
@@ -67,6 +82,8 @@ export type SessionState =
       canViewAuditLog: boolean
       canViewProducts: boolean
       canManageProducts: boolean
+      canViewInventoryItems: boolean
+      canManageInventoryItems: boolean
     }
 
 export interface UnlockInput {

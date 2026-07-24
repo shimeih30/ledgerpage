@@ -17,7 +17,9 @@ export const ACTIONS = [
   'tax.manage',
   'audit.read',
   'products.read',
-  'products.manage'
+  'products.manage',
+  'inventory_items.read',
+  'inventory_items.manage'
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -70,6 +72,11 @@ export interface AuthPrincipal {
  * conservative-reading convention, an unstated capability (e.g. finance
  * needing product visibility for costing context) is not assumed.
  *
+ * Slice 12 (inventory_items.read/inventory_items.manage): approved
+ * decision mirrors Slice 11's matrix exactly — owner, executive, and
+ * operations all receive both; finance receives inventory_items.read
+ * only.
+ *
  * owner always receives every defined action, computed from ACTIONS
  * rather than hand-duplicated, so a newly added action is automatically
  * granted to owner without this file needing a matching edit.
@@ -81,16 +88,25 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'tax.read',
     'audit.read',
     'products.read',
-    'products.manage'
+    'products.manage',
+    'inventory_items.read',
+    'inventory_items.manage'
   ],
-  operations: ['numbering.read', 'products.read', 'products.manage'],
+  operations: [
+    'numbering.read',
+    'products.read',
+    'products.manage',
+    'inventory_items.read',
+    'inventory_items.manage'
+  ],
   finance: [
     'company.read',
     'numbering.read',
     'tax.read',
     'tax.manage',
     'audit.read',
-    'products.read'
+    'products.read',
+    'inventory_items.read'
   ]
 }
 

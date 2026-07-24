@@ -4,6 +4,7 @@ import type { LedgerPageLoginApi } from '../../shared/ipc/login'
 import type { LedgerPageUsersApi } from '../../shared/ipc/users'
 import type { LedgerPageAuditApi } from '../../shared/ipc/audit'
 import type { LedgerPageProductsApi } from '../../shared/ipc/products'
+import type { LedgerPageInventoryItemsApi } from '../../shared/ipc/inventoryItems'
 
 declare global {
   interface Window {
@@ -12,7 +13,8 @@ declare global {
       LedgerPageLoginApi &
       LedgerPageUsersApi &
       LedgerPageAuditApi &
-      LedgerPageProductsApi
+      LedgerPageProductsApi &
+      LedgerPageInventoryItemsApi
   }
 }
 
