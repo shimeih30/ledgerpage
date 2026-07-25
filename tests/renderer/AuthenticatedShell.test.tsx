@@ -47,7 +47,17 @@ function installMockApi(): void {
     updateInventoryItem: vi.fn(),
     deactivateInventoryItem: vi.fn(),
     reactivateInventoryItem: vi.fn(),
-    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] })
+    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] }),
+    listSuppliers: vi.fn().mockResolvedValue({ success: true, suppliers: [] }),
+    getSupplier: vi.fn(),
+    createSupplier: vi.fn(),
+    updateSupplier: vi.fn(),
+    deactivateSupplier: vi.fn(),
+    reactivateSupplier: vi.fn(),
+    recordSupplierPrice: vi.fn(),
+    listPricesForSupplier: vi.fn().mockResolvedValue({ success: true, prices: [] }),
+    listPricesForInventoryItem: vi.fn().mockResolvedValue({ success: true, prices: [] }),
+    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null })
   }
 }
 
@@ -60,6 +70,8 @@ function session(overrides: Partial<SafeSessionInfo>): SafeSessionInfo {
     canManageProducts: false,
     canViewInventoryItems: false,
     canManageInventoryItems: false,
+    canViewSuppliers: false,
+    canManageSuppliers: false,
     ...overrides
   }
 }
@@ -477,6 +489,112 @@ describe('AuthenticatedShell navigation', () => {
       await screen.findByText('FLOUR')
       expect(screen.queryByRole('button', { name: 'New item' })).toBeNull()
       expect(screen.getByRole('button', { name: 'View' })).toBeDefined()
+    })
+  })
+
+  describe('Suppliers navigation', () => {
+    it('shows the Suppliers link only when canViewSuppliers is true', () => {
+      installMockApi()
+      render(
+        <AuthenticatedShell session={session({ canViewSuppliers: true })} onLoggedOut={vi.fn()} />
+      )
+      expect(screen.getByRole('button', { name: 'Suppliers' })).toBeDefined()
+    })
+
+    it('hides the Suppliers link when canViewSuppliers is false', () => {
+      installMockApi()
+      render(
+        <AuthenticatedShell session={session({ canViewSuppliers: false })} onLoggedOut={vi.fn()} />
+      )
+      expect(screen.queryByRole('button', { name: 'Suppliers' })).toBeNull()
+    })
+
+    it('clicking Suppliers navigates to the supplier list', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell session={session({ canViewSuppliers: true })} onLoggedOut={vi.fn()} />
+      )
+      await user.click(screen.getByRole('button', { name: 'Suppliers' }))
+      expect(await screen.findByText('No suppliers yet.')).toBeDefined()
+    })
+
+    it('New supplier opens create mode', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewSuppliers: true, canManageSuppliers: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Suppliers' }))
+      await user.click(await screen.findByRole('button', { name: 'New supplier' }))
+      expect(await screen.findByRole('button', { name: 'Create supplier' })).toBeDefined()
+    })
+
+    it('selecting a row opens detail mode for that supplier', async () => {
+      installMockApi()
+      const seededSupplier = {
+        id: 'supplier_1',
+        code: 'SUP-000001',
+        name: 'Acme Foods',
+        contactDetails: null,
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      window.ledgerpage.listSuppliers = vi
+        .fn()
+        .mockResolvedValue({ success: true, suppliers: [seededSupplier] })
+      window.ledgerpage.getSupplier = vi
+        .fn()
+        .mockResolvedValue({ success: true, supplier: seededSupplier })
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewSuppliers: true, canManageSuppliers: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Suppliers' }))
+      await user.click(await screen.findByRole('button', { name: 'Edit' }))
+      expect(await screen.findByText('Acme Foods')).toBeDefined()
+    })
+
+    it('successful creation opens the generated supplier detail, then Back returns to the list', async () => {
+      installMockApi()
+      const createdSupplier = {
+        id: 'supplier_new',
+        code: 'SUP-000001',
+        name: 'Acme Foods',
+        contactDetails: null,
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      window.ledgerpage.createSupplier = vi
+        .fn()
+        .mockResolvedValue({ success: true, supplier: createdSupplier })
+      window.ledgerpage.getSupplier = vi
+        .fn()
+        .mockResolvedValue({ success: true, supplier: createdSupplier })
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewSuppliers: true, canManageSuppliers: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Suppliers' }))
+      await user.click(await screen.findByRole('button', { name: 'New supplier' }))
+      await user.type(screen.getByLabelText('Name'), 'Acme Foods')
+      await user.click(screen.getByRole('button', { name: 'Create supplier' }))
+
+      expect(await screen.findByText('Acme Foods')).toBeDefined()
+
+      await user.click(screen.getByRole('button', { name: 'Back' }))
+      expect(await screen.findByText('No suppliers yet.')).toBeDefined()
     })
   })
 })

@@ -19,7 +19,9 @@ export const ACTIONS = [
   'products.read',
   'products.manage',
   'inventory_items.read',
-  'inventory_items.manage'
+  'inventory_items.manage',
+  'suppliers.read',
+  'suppliers.manage'
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -77,6 +79,18 @@ export interface AuthPrincipal {
  * operations all receive both; finance receives inventory_items.read
  * only.
  *
+ * Slice 13 (suppliers.read/suppliers.manage): approved decision departs
+ * from Slices 11/12's pattern deliberately — ALL FOUR roles, including
+ * finance, receive both actions. Unlike products/inventory items,
+ * supplier and supplier-item pricing data is explicitly named financial
+ * master data in the approved decision, so finance's usual read-only
+ * posture on master-data domains does not apply here; finance manages
+ * suppliers and supplier pricing directly. This action pair is also
+ * reused, unchanged, for supplier_item_prices — there is no separate
+ * action for price recording, mirroring how product_variants reuses
+ * products.read/products.manage directly rather than having its own
+ * pair.
+ *
  * owner always receives every defined action, computed from ACTIONS
  * rather than hand-duplicated, so a newly added action is automatically
  * granted to owner without this file needing a matching edit.
@@ -90,14 +104,18 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'products.read',
     'products.manage',
     'inventory_items.read',
-    'inventory_items.manage'
+    'inventory_items.manage',
+    'suppliers.read',
+    'suppliers.manage'
   ],
   operations: [
     'numbering.read',
     'products.read',
     'products.manage',
     'inventory_items.read',
-    'inventory_items.manage'
+    'inventory_items.manage',
+    'suppliers.read',
+    'suppliers.manage'
   ],
   finance: [
     'company.read',
@@ -106,7 +124,9 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'tax.manage',
     'audit.read',
     'products.read',
-    'inventory_items.read'
+    'inventory_items.read',
+    'suppliers.read',
+    'suppliers.manage'
   ]
 }
 

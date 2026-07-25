@@ -20,14 +20,18 @@ const EXPECTED_MATRIX: Record<(typeof ROLE_CODES)[number], readonly string[]> = 
     'products.read',
     'products.manage',
     'inventory_items.read',
-    'inventory_items.manage'
+    'inventory_items.manage',
+    'suppliers.read',
+    'suppliers.manage'
   ],
   operations: [
     'numbering.read',
     'products.read',
     'products.manage',
     'inventory_items.read',
-    'inventory_items.manage'
+    'inventory_items.manage',
+    'suppliers.read',
+    'suppliers.manage'
   ],
   finance: [
     'company.read',
@@ -36,7 +40,9 @@ const EXPECTED_MATRIX: Record<(typeof ROLE_CODES)[number], readonly string[]> = 
     'tax.manage',
     'audit.read',
     'products.read',
-    'inventory_items.read'
+    'inventory_items.read',
+    'suppliers.read',
+    'suppliers.manage'
   ]
 }
 
@@ -57,7 +63,9 @@ describe('authorizationService', () => {
       'products.read',
       'products.manage',
       'inventory_items.read',
-      'inventory_items.manage'
+      'inventory_items.manage',
+      'suppliers.read',
+      'suppliers.manage'
     ])
   })
 

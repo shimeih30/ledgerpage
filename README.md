@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 12
+## Current status: M1, Slice 13
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -478,6 +478,101 @@ stock movements (Slice 15), supplier links and supplier-item pricing
 (Slice 13), any unit-conversion factor between purchase and consumption
 units, and any accounting posting (this is non-financial master data;
 nothing here touches a ledger).
+
+### Suppliers
+
+The third master-data module: supplier master data and a full,
+append-only price history for what each supplier charges for each
+inventory item — entirely independent of any actual purchase transaction.
+There is no separate `supplier_items` link table; a `supplier_item_prices`
+row _is_ the supplier-item relationship — recording a price is what
+establishes that a supplier supplies an item, mirroring how
+`product_variants` needs no separate link to its parent `products` row
+beyond its own foreign key.
+
+`suppliers.code` is, by approved decision, **system-generated** — unlike
+`inventory_items.code`, the `supplier` document type is present in the
+frozen `APPROVED_NUMBERING_DEFAULTS` (`SUP`, never-reset, 6-digit padding)
+and has been seeded, unused, at first-run since Slice 8. `createSupplier`
+allocates it via `numberingService.allocateNext('supplier', ...)` inside
+the same transaction as the insert and its audit row, mirroring
+`createProduct`'s exact pattern; `code` is immutable thereafter and absent
+from `UpdateSupplierInput` entirely, a structural guarantee. `name` is
+required and trimmed; `contactDetails` is nullable — trimmed, with a
+blank value normalizing to `null`, matching the established
+blank-becomes-null convention for optional text fields.
+
+`supplier_item_prices` is append-only by design: `supplierPriceService.ts`
+exports `recordSupplierPrice`, `listPricesForSupplier`,
+`listPricesForInventoryItem`, and `getCurrentPriceForSupplierItem` —
+structurally no `update`, `delete`, `deactivate`, or `reactivate` function
+exists for this table anywhere in the codebase, not merely by convention.
+Corrections are always recorded as new rows; a prior row is never
+modified once inserted. Recording a **new** price requires both the
+supplier and the inventory item to be currently active — but an existing
+historical row is never affected by either side's later deactivation;
+`SafeSupplierItemPrice` resolves the supplier's and item's labels
+(code/name) and each one's current `isActive` state server-side on every
+read, so a price row referencing a now-deactivated supplier or item keeps
+displaying correctly, tagged as referencing an inactive party, rather
+than silently disappearing or erroring.
+
+Price is always per the inventory item's own base unit — no purchase-pack
+or unit-conversion-factor concept is introduced here (deferred, per the
+roadmap's own §8). `currencyId` is always written as
+`FUNCTIONAL_CURRENCY_ID`, exactly like `product_variants.currency_id`;
+never accepted from the renderer, which has no currency selector at all.
+`priceMinor` is a non-negative, safe integer — decimals, negative
+values, `NaN`, `Infinity`, and unsafe integers are all rejected, both in
+the renderer's own parsing (`supplierPriceDecimal.ts`, a dedicated copy
+for this domain, never `Number(value) * 100` — confirmed directly that
+`0.29 * 100 === 28.999999999999996` in IEEE 754 double precision) and
+again independently in `supplierPriceValidation.ts` on the main-process
+side. `supplierItemCode` is an optional field recording the supplier's
+own SKU/reference for that item _at the time that specific price was
+recorded_ — nullable, trimmed, blank-becomes-null, with no uniqueness
+constraint; because the table is append-only, a historical row's
+`supplierItemCode` is never retroactively changed by a later price using
+a different one.
+
+`effectiveFrom` accepts any valid past, present, or future timestamp — a
+price can be backdated to when it actually took effect, or scheduled
+ahead of time. **Current price** is precisely defined: the latest row
+(by `effectiveFrom`, then `createdAt` as a deterministic tiebreaker) with
+`effectiveFrom <= now`; a future-dated (scheduled) row is never treated
+as current, however recently it was created, and never becomes current
+early. `supplier_item_prices` carries a real database `unique(supplier_id,
+inventory_item_id, effective_from)` constraint — attempting to record a
+second price for the same supplier/item pair at the exact same effective
+moment is rejected outright, mapped to a dedicated `duplicate_effective_price`
+error, rather than leaving two rows to arbitrarily tie-break against each
+other. The renderer's own history table mirrors this exact current/
+scheduled/historical classification for display, computed independently
+from the same `effectiveFrom`/`createdAt` fields, and never re-sorts the
+already-sorted rows the server returns.
+
+Unlike Products and Inventory Items, **all four roles** — including
+Finance — receive both `suppliers.read` and `suppliers.manage`: this is
+the approved decision's explicit departure from the read-only-for-Finance
+pattern established in Slices 11/12, since supplier and supplier-item
+pricing data is treated as financial master data Finance directly
+manages. `supplier_item_prices` reuses these same two actions rather than
+introducing a separate pair, mirroring how `product_variants` reuses
+`products.read`/`products.manage` directly. Every supplier
+create/update/deactivate/reactivate, and every recorded price, writes
+exactly one audit row in the same transaction as its business mutation; a
+no-op supplier update or redundant activation-state change writes none,
+but a price recording is never a no-op (there is no update path to
+suppress). `canViewSuppliers`/`canManageSuppliers` are cosmetic-only
+session flags, exactly like every prior `canView*`/`canManage*` pair —
+real enforcement is `requireAuthorizedCaller`, resolved fresh from SQLite
+on every call.
+
+**Intentionally excluded from this slice:** purchase orders, goods
+receipts, supplier payments/balances, and accounts payable (Slice 18 and
+later); any accounting posting; purchase packs or unit-conversion
+factors between a supplier's purchase unit and an item's base unit; and
+any separate supplier-item relationship independent of a recorded price.
 
 ### First-run setup wizard
 

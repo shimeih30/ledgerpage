@@ -101,6 +101,32 @@ import {
   type UpdateInventoryItemInput,
   type UpdateInventoryItemResult
 } from '../shared/ipc/inventoryItems'
+import {
+  SUPPLIER_PRICES_GET_CURRENT_CHANNEL,
+  SUPPLIER_PRICES_LIST_FOR_ITEM_CHANNEL,
+  SUPPLIER_PRICES_LIST_FOR_SUPPLIER_CHANNEL,
+  SUPPLIER_PRICES_RECORD_CHANNEL,
+  SUPPLIERS_CREATE_CHANNEL,
+  SUPPLIERS_DEACTIVATE_CHANNEL,
+  SUPPLIERS_GET_CHANNEL,
+  SUPPLIERS_LIST_CHANNEL,
+  SUPPLIERS_REACTIVATE_CHANNEL,
+  SUPPLIERS_UPDATE_CHANNEL,
+  type CreateSupplierInput,
+  type CreateSupplierResult,
+  type GetCurrentSupplierItemPriceResult,
+  type GetSupplierResult,
+  type LedgerPageSuppliersApi,
+  type ListSupplierItemPricesResult,
+  type ListSuppliersResult,
+  type MutateSupplierResult,
+  type RecordSupplierPriceInput,
+  type RecordSupplierPriceResult,
+  type SupplierIdInput,
+  type SupplierItemPairInput,
+  type UpdateSupplierInput,
+  type UpdateSupplierResult
+} from '../shared/ipc/suppliers'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -141,7 +167,8 @@ const api: LedgerPageApi &
   LedgerPageUsersApi &
   LedgerPageAuditApi &
   LedgerPageProductsApi &
-  LedgerPageInventoryItemsApi = {
+  LedgerPageInventoryItemsApi &
+  LedgerPageSuppliersApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -246,7 +273,40 @@ const api: LedgerPageApi &
     ipcRenderer.invoke(INVENTORY_ITEMS_REACTIVATE_CHANNEL, input),
 
   listAssignableUnitsOfMeasure: (): Promise<ListAssignableUnitsOfMeasureResult> =>
-    ipcRenderer.invoke(INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL)
+    ipcRenderer.invoke(INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL),
+
+  listSuppliers: (): Promise<ListSuppliersResult> => ipcRenderer.invoke(SUPPLIERS_LIST_CHANNEL),
+
+  getSupplier: (input: SupplierIdInput): Promise<GetSupplierResult> =>
+    ipcRenderer.invoke(SUPPLIERS_GET_CHANNEL, input),
+
+  createSupplier: (input: CreateSupplierInput): Promise<CreateSupplierResult> =>
+    ipcRenderer.invoke(SUPPLIERS_CREATE_CHANNEL, input),
+
+  updateSupplier: (input: UpdateSupplierInput): Promise<UpdateSupplierResult> =>
+    ipcRenderer.invoke(SUPPLIERS_UPDATE_CHANNEL, input),
+
+  deactivateSupplier: (input: SupplierIdInput): Promise<MutateSupplierResult> =>
+    ipcRenderer.invoke(SUPPLIERS_DEACTIVATE_CHANNEL, input),
+
+  reactivateSupplier: (input: SupplierIdInput): Promise<MutateSupplierResult> =>
+    ipcRenderer.invoke(SUPPLIERS_REACTIVATE_CHANNEL, input),
+
+  recordSupplierPrice: (input: RecordSupplierPriceInput): Promise<RecordSupplierPriceResult> =>
+    ipcRenderer.invoke(SUPPLIER_PRICES_RECORD_CHANNEL, input),
+
+  listPricesForSupplier: (input: SupplierIdInput): Promise<ListSupplierItemPricesResult> =>
+    ipcRenderer.invoke(SUPPLIER_PRICES_LIST_FOR_SUPPLIER_CHANNEL, input),
+
+  listPricesForInventoryItem: (
+    input: Pick<SupplierItemPairInput, 'inventoryItemId'>
+  ): Promise<ListSupplierItemPricesResult> =>
+    ipcRenderer.invoke(SUPPLIER_PRICES_LIST_FOR_ITEM_CHANNEL, input),
+
+  getCurrentSupplierItemPrice: (
+    input: SupplierItemPairInput
+  ): Promise<GetCurrentSupplierItemPriceResult> =>
+    ipcRenderer.invoke(SUPPLIER_PRICES_GET_CURRENT_CHANNEL, input)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

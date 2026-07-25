@@ -80,7 +80,17 @@ function installMockApi(overrides: {
     updateInventoryItem: vi.fn(),
     deactivateInventoryItem: vi.fn(),
     reactivateInventoryItem: vi.fn(),
-    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] })
+    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] }),
+    listSuppliers: vi.fn().mockResolvedValue({ success: true, suppliers: [] }),
+    getSupplier: vi.fn(),
+    createSupplier: vi.fn(),
+    updateSupplier: vi.fn(),
+    deactivateSupplier: vi.fn(),
+    reactivateSupplier: vi.fn(),
+    recordSupplierPrice: vi.fn(),
+    listPricesForSupplier: vi.fn().mockResolvedValue({ success: true, prices: [] }),
+    listPricesForInventoryItem: vi.fn().mockResolvedValue({ success: true, prices: [] }),
+    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null })
   }
 }
 

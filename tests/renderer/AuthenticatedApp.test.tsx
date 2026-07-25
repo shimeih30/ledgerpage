@@ -55,7 +55,17 @@ function installMockApi(overrides: {
     updateInventoryItem: vi.fn(),
     deactivateInventoryItem: vi.fn(),
     reactivateInventoryItem: vi.fn(),
-    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] })
+    listAssignableUnitsOfMeasure: vi.fn().mockResolvedValue({ success: true, units: [] }),
+    listSuppliers: vi.fn().mockResolvedValue({ success: true, suppliers: [] }),
+    getSupplier: vi.fn(),
+    createSupplier: vi.fn(),
+    updateSupplier: vi.fn(),
+    deactivateSupplier: vi.fn(),
+    reactivateSupplier: vi.fn(),
+    recordSupplierPrice: vi.fn(),
+    listPricesForSupplier: vi.fn().mockResolvedValue({ success: true, prices: [] }),
+    listPricesForInventoryItem: vi.fn().mockResolvedValue({ success: true, prices: [] }),
+    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null })
   }
 }
 
@@ -91,7 +101,9 @@ describe('AuthenticatedApp', () => {
           canViewProducts: true,
           canManageProducts: true,
           canViewInventoryItems: true,
-          canManageInventoryItems: true
+          canManageInventoryItems: true,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         })
     })
     render(<AuthenticatedApp />)
@@ -118,7 +130,9 @@ describe('AuthenticatedApp', () => {
           canViewProducts: true,
           canManageProducts: true,
           canViewInventoryItems: true,
-          canManageInventoryItems: true
+          canManageInventoryItems: true,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         })
         .mockResolvedValue({ state: 'locked', displayName: 'Ben' })
       installMockApi({ getSessionState })
@@ -151,7 +165,9 @@ describe('AuthenticatedApp', () => {
             canViewProducts: true,
             canManageProducts: true,
             canViewInventoryItems: true,
-            canManageInventoryItems: true
+            canManageInventoryItems: true,
+            canViewSuppliers: true,
+            canManageSuppliers: true
           }),
         touchSession
       })
@@ -180,7 +196,9 @@ describe('AuthenticatedApp', () => {
             canViewProducts: true,
             canManageProducts: true,
             canViewInventoryItems: true,
-            canManageInventoryItems: true
+            canManageInventoryItems: true,
+            canViewSuppliers: true,
+            canManageSuppliers: true
           }
         })
       })
@@ -207,7 +225,9 @@ describe('AuthenticatedApp', () => {
             canViewProducts: true,
             canManageProducts: true,
             canViewInventoryItems: true,
-            canManageInventoryItems: true
+            canManageInventoryItems: true,
+            canViewSuppliers: true,
+            canManageSuppliers: true
           }
         })
       })
@@ -232,7 +252,9 @@ describe('AuthenticatedApp', () => {
             canViewProducts: true,
             canManageProducts: true,
             canViewInventoryItems: true,
-            canManageInventoryItems: true
+            canManageInventoryItems: true,
+            canViewSuppliers: true,
+            canManageSuppliers: true
           })
       })
       render(<AuthenticatedApp />)

@@ -660,3 +660,91 @@ export const inventoryItems = sqliteTable(
     )
   ]
 )
+
+/**
+ * Slice 13: supplier master data and per-supplier price history for
+ * inventory items — independent of any actual purchase transaction
+ * (no purchase orders, goods receipts, or payables yet).
+ *
+ * code is system-generated via the existing frozen `supplier` numbering
+ * rule (already seeded at first-run since Slice 8; unused until now),
+ * mirroring products.code exactly — never accepted as create or update
+ * input, allocated inside the same transaction as the insert and its
+ * audit row.
+ */
+export const suppliers = sqliteTable(
+  'suppliers',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    contactDetails: text('contact_details'),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('suppliers_company_code_unique').on(t.companyId, t.code),
+    check('suppliers_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`)
+  ]
+)
+
+/**
+ * Append-only: no update or delete path exists anywhere in this
+ * codebase for this table, structurally (supplierPriceService.ts has
+ * no such function at all) as well as by convention. A supplier_item_prices
+ * row IS the supplier-item relationship — there is no separate
+ * supplier_items link table; recording a price is what establishes that
+ * a supplier supplies an item.
+ *
+ * currency_id is always written as FUNCTIONAL_CURRENCY_ID, never
+ * accepted from a caller, mirroring product_variants.currency_id's own
+ * precedent exactly. Price is per the inventory item's own base unit —
+ * no purchase-pack or conversion-factor concept is introduced here.
+ *
+ * The unique (supplier_id, inventory_item_id, effective_from)
+ * constraint makes "the current price" well-defined: recording a second
+ * price for the same item at the exact same effective moment is
+ * rejected outright (mapped to a duplicate_effective_price error at the
+ * service layer), rather than leaving two rows to arbitrarily tie-break
+ * against each other.
+ *
+ * Both supplier_id and inventory_item_id may reference a since-deactivated
+ * row — recording a NEW price requires both to be currently active
+ * (enforced in the service layer, not expressible as a CHECK constraint
+ * since SQLite CHECK constraints cannot see another table's row), but an
+ * EXISTING price row is never affected by a later deactivation of either
+ * side; its own reference and label continue to resolve normally.
+ */
+export const supplierItemPrices = sqliteTable(
+  'supplier_item_prices',
+  {
+    id: text('id').primaryKey(),
+    supplierId: text('supplier_id')
+      .notNull()
+      .references(() => suppliers.id),
+    inventoryItemId: text('inventory_item_id')
+      .notNull()
+      .references(() => inventoryItems.id),
+    supplierItemCode: text('supplier_item_code'),
+    priceMinor: integer('price_minor').notNull(),
+    currencyId: text('currency_id')
+      .notNull()
+      .references(() => currencies.id),
+    effectiveFrom: integer('effective_from', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('supplier_item_prices_supplier_item_effective_unique').on(
+      t.supplierId,
+      t.inventoryItemId,
+      t.effectiveFrom
+    ),
+    check('supplier_item_prices_price_non_negative', sql`${t.priceMinor} >= 0`),
+    index('supplier_item_prices_supplier_idx').on(t.supplierId, t.effectiveFrom),
+    index('supplier_item_prices_item_idx').on(t.inventoryItemId, t.effectiveFrom)
+  ]
+)
