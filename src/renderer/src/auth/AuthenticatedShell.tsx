@@ -5,6 +5,8 @@ import { ProductListScreen } from '../products/ProductListScreen'
 import { ProductDetailScreen } from '../products/ProductDetailScreen'
 import { InventoryItemListScreen } from '../inventoryItems/InventoryItemListScreen'
 import { InventoryItemDetailScreen } from '../inventoryItems/InventoryItemDetailScreen'
+import { SupplierListScreen } from '../suppliers/SupplierListScreen'
+import { SupplierDetailScreen } from '../suppliers/SupplierDetailScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -13,7 +15,7 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items'
+type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items' | 'suppliers'
 
 /**
  * Local navigation within the Products area only — list/create/detail —
@@ -39,6 +41,14 @@ type InventoryItemsRoute =
   { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; inventoryItemId: string }
 
 /**
+ * Same local-routing posture as ProductsRoute/InventoryItemsRoute above
+ * — list/create/detail, no routing library, reset to 'list' whenever
+ * the nav link itself is clicked.
+ */
+type SuppliersRoute =
+  { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; supplierId: string }
+
+/**
  * The authenticated application area. The "Users & Roles" link is
  * rendered only when `session.isOwner` is true, and the "Audit Log"
  * link only when `session.canViewAuditLog` is true — both purely
@@ -55,6 +65,7 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
   const [inventoryItemsRoute, setInventoryItemsRoute] = useState<InventoryItemsRoute>({
     screen: 'list'
   })
+  const [suppliersRoute, setSuppliersRoute] = useState<SuppliersRoute>({ screen: 'list' })
 
   async function handleLogout(): Promise<void> {
     try {
@@ -171,6 +182,26 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Inventory Items
             </button>
           )}
+          {session.canViewSuppliers && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('suppliers')
+                setSuppliersRoute({ screen: 'list' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'suppliers' ? 700 : 500
+              }}
+            >
+              Suppliers
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -239,6 +270,28 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
           onSaved={(inventoryItemId) =>
             setInventoryItemsRoute({ screen: 'detail', inventoryItemId })
           }
+        />
+      )}
+      {view === 'suppliers' && suppliersRoute.screen === 'list' && (
+        <SupplierListScreen
+          canManageSuppliers={session.canManageSuppliers}
+          onOpenSupplier={(supplierId) => setSuppliersRoute({ screen: 'detail', supplierId })}
+          onCreateSupplier={() => setSuppliersRoute({ screen: 'create' })}
+        />
+      )}
+      {view === 'suppliers' && suppliersRoute.screen === 'create' && (
+        <SupplierDetailScreen
+          canManageSuppliers={session.canManageSuppliers}
+          onBack={() => setSuppliersRoute({ screen: 'list' })}
+          onSaved={(supplierId) => setSuppliersRoute({ screen: 'detail', supplierId })}
+        />
+      )}
+      {view === 'suppliers' && suppliersRoute.screen === 'detail' && (
+        <SupplierDetailScreen
+          supplierId={suppliersRoute.supplierId}
+          canManageSuppliers={session.canManageSuppliers}
+          onBack={() => setSuppliersRoute({ screen: 'list' })}
+          onSaved={(supplierId) => setSuppliersRoute({ screen: 'detail', supplierId })}
         />
       )}
       {view === 'home' && (

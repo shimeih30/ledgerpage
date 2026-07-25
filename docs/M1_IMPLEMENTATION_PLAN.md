@@ -717,6 +717,64 @@ payments/balances (Slice 18). No accounting posting.
 - Recording a new supplier price does not modify any prior price row
   (append-only price history).
 
+**Decisions approved for this slice (owner review, following the
+pre-implementation plan above).**
+
+1. **Supplier code.** System-generated, using the existing frozen
+   `supplier` numbering rule (already seeded, unused, at first-run since
+   Slice 8) — unlike `inventory_items.code`. Allocated inside the same
+   transaction as the supplier insert and its audit row. The renderer
+   never submits a supplier code; it is immutable after creation.
+2. **Permissions.** `owner`, `executive`, `operations`, **and
+   `finance`** all receive both `suppliers.read` and `suppliers.manage`
+   — a deliberate departure from Products'/Inventory Items' Finance-
+   read-only pattern, since supplier and supplier-item pricing data is
+   treated as financial master data Finance directly manages.
+   `supplier_item_prices` reuses these same two actions; no separate
+   action pair was introduced for pricing. Two new cosmetic session
+   flags — `canViewSuppliers`, `canManageSuppliers` — gate renderer
+   nav/UI visibility only; real enforcement remains
+   `requireAuthorizedCaller`, resolved fresh from SQLite on every call.
+3. **Supplier-item relationship.** No separate `supplier_items` table.
+   A `supplier_item_prices` row is itself the evidence that a supplier
+   supplies an item.
+4. **Active-state rule.** Recording a _new_ supplier price requires
+   both the supplier and the inventory item to be currently active.
+   Existing historical price rows are never affected by either side's
+   later deactivation, and continue displaying the deactivated
+   supplier's/item's label correctly.
+5. **Contact details.** Nullable, trimmed; a blank value normalizes to
+   `null`.
+6. **Effective dates.** Past, present, and future values are all
+   accepted. "Current price" is precisely defined as the latest row
+   with `effectiveFrom <= now`, ordered by `effectiveFrom` descending
+   and `createdAt` descending as a deterministic tiebreaker. A
+   future-dated row is a scheduled price and must never become current
+   early.
+7. **Price-row uniqueness.** A real database `unique(supplierId,
+inventoryItemId, effectiveFrom)` constraint exists; a violation is
+   mapped to a dedicated `duplicate_effective_price` error rather than
+   a raw constraint message.
+8. **Supplier item code.** An optional `supplierItemCode` field on
+   `supplier_item_prices` — nullable, trimmed, blank-becomes-null,
+   representing the supplier's own SKU/reference _at the time that
+   specific price was recorded_. No uniqueness constraint; historical
+   rows preserve whatever value existed at insertion time, since the
+   table is append-only.
+9. **Lead time.** Not added to suppliers or to `supplier_item_prices`.
+   `leadTimeDays` remains solely on `inventory_items`, unchanged from
+   Slice 12.
+10. **Unit and currency.** Price is always per the inventory item's own
+    base unit — no purchase packs, conversion factors, or
+    supplier-specific units are introduced. `currencyId` exists as a
+    column but is always assigned `FUNCTIONAL_CURRENCY_ID` server-side;
+    the renderer cannot submit or choose a currency.
+11. **Append-only pricing.** `supplier_item_prices` supports insert,
+    list, and current-price lookup only — structurally, no update or
+    delete function exists anywhere in the codebase for this table.
+    Corrections are always recorded as new rows. Each price insertion
+    writes exactly one audit row in the same transaction as the insert.
+
 ---
 
 ### Slice 14 — Customers

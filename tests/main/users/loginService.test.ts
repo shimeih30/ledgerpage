@@ -71,7 +71,9 @@ describe('loginService', () => {
           canViewProducts: true,
           canManageProducts: true,
           canViewInventoryItems: true,
-          canManageInventoryItems: true
+          canManageInventoryItems: true,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         }
       })
       expect(service.getSessionState(db)).toEqual({
@@ -82,7 +84,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: true,
         canViewInventoryItems: true,
-        canManageInventoryItems: true
+        canManageInventoryItems: true,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
     }, 20000)
 
@@ -110,7 +114,9 @@ describe('loginService', () => {
           canViewProducts: true,
           canManageProducts: false,
           canViewInventoryItems: true,
-          canManageInventoryItems: false
+          canManageInventoryItems: false,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         }
       })
     }, 20000)
@@ -190,7 +196,9 @@ describe('loginService', () => {
           canViewProducts: true,
           canManageProducts: true,
           canViewInventoryItems: true,
-          canManageInventoryItems: true
+          canManageInventoryItems: true,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         }
       })
     }, 20000)
@@ -223,7 +231,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: true,
         canViewInventoryItems: true,
-        canManageInventoryItems: true
+        canManageInventoryItems: true,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
 
       db.delete(userRoles).where(eq(userRoles.userId, ownerId)).run()
@@ -239,7 +249,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: false,
         canViewInventoryItems: true,
-        canManageInventoryItems: false
+        canManageInventoryItems: false,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
     }, 20000)
   })
@@ -268,7 +280,9 @@ describe('loginService', () => {
           canViewProducts: true,
           canManageProducts: true,
           canViewInventoryItems: true,
-          canManageInventoryItems: true
+          canManageInventoryItems: true,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         }
       })
       expect(service.getSessionState(db)).toEqual({
@@ -279,7 +293,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: true,
         canViewInventoryItems: true,
-        canManageInventoryItems: true
+        canManageInventoryItems: true,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
     }, 20000)
 
@@ -333,7 +349,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: true,
         canViewInventoryItems: true,
-        canManageInventoryItems: true
+        canManageInventoryItems: true,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
       service.dispose()
     }, 20000)
@@ -400,7 +418,9 @@ describe('loginService', () => {
           canViewProducts: true,
           canManageProducts: false,
           canViewInventoryItems: true,
-          canManageInventoryItems: false
+          canManageInventoryItems: false,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         }
       })
       expect(service.getSessionState(db)).toEqual({
@@ -411,7 +431,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: false,
         canViewInventoryItems: true,
-        canManageInventoryItems: false
+        canManageInventoryItems: false,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
     }, 20000)
 
@@ -439,7 +461,9 @@ describe('loginService', () => {
           canViewProducts: true,
           canManageProducts: true,
           canViewInventoryItems: true,
-          canManageInventoryItems: true
+          canManageInventoryItems: true,
+          canViewSuppliers: true,
+          canManageSuppliers: true
         }
       })
     }, 20000)
@@ -462,7 +486,9 @@ describe('loginService', () => {
         canViewProducts: true,
         canManageProducts: true,
         canViewInventoryItems: true,
-        canManageInventoryItems: true
+        canManageInventoryItems: true,
+        canViewSuppliers: true,
+        canManageSuppliers: true
       })
     }, 20000)
 

@@ -63,6 +63,21 @@ export interface SafeSessionInfo {
    * individual mutating call.
    */
   canManageInventoryItems: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Suppliers nav link / read-only view. Real enforcement is
+   * suppliers:*'s own requireAuthorizedCaller('suppliers.read') checks.
+   */
+  canViewSuppliers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate/price-recording controls on the Suppliers
+   * screens. Real enforcement is suppliers:*'s own
+   * requireAuthorizedCaller('suppliers.manage') checks on each
+   * individual mutating call. All four roles receive this, per the
+   * approved decision that supplier pricing is financial master data.
+   */
+  canManageSuppliers: boolean
 }
 
 export type LoginResult = { success: true; session: SafeSessionInfo } | { success: false }
@@ -84,6 +99,8 @@ export type SessionState =
       canManageProducts: boolean
       canViewInventoryItems: boolean
       canManageInventoryItems: boolean
+      canViewSuppliers: boolean
+      canManageSuppliers: boolean
     }
 
 export interface UnlockInput {

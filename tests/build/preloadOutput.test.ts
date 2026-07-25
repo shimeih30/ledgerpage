@@ -163,7 +163,17 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'updateInventoryItem',
           'deactivateInventoryItem',
           'reactivateInventoryItem',
-          'listAssignableUnitsOfMeasure'
+          'listAssignableUnitsOfMeasure',
+          'listSuppliers',
+          'getSupplier',
+          'createSupplier',
+          'updateSupplier',
+          'deactivateSupplier',
+          'reactivateSupplier',
+          'recordSupplierPrice',
+          'listPricesForSupplier',
+          'listPricesForInventoryItem',
+          'getCurrentSupplierItemPrice'
         ].sort()
       )
     })

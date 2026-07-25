@@ -10,6 +10,9 @@ import { createCompany } from '../../../src/main/db/companyService'
 import { createTaxCode } from '../../../src/main/db/taxCodeService'
 import { createProduct } from '../../../src/main/db/productService'
 import { createVariant } from '../../../src/main/db/productVariantService'
+import { createInventoryItem } from '../../../src/main/db/inventoryItemService'
+import { createSupplier } from '../../../src/main/db/supplierService'
+import { recordSupplierPrice } from '../../../src/main/db/supplierPriceService'
 import { createUser } from '../../../src/main/auth/userService'
 import { hashPassword } from '../../../src/main/auth/passwordHashing'
 import { userRoles } from '../../../src/main/db/schema'
@@ -1020,6 +1023,485 @@ describe('Slice 12 migration (0006_inventory_items)', () => {
       ]
 
       const diffOutput = execFileSync('git', ['diff', 'm1-slice-11', '--', ...filesToCheck], {
+        cwd: process.cwd(),
+        encoding: 'utf-8'
+      })
+
+      expect(diffOutput.trim()).toBe('')
+    })
+  })
+})
+
+describe('Slice 13 migration (0007_suppliers)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = createTempDir('ledgerpage-migration-0007')
+  })
+
+  afterEach(() => {
+    removeTempDir(dir)
+  })
+
+  function seedSupplierNumberingRule(rawDb: ReturnType<typeof createDatabaseConnection>): void {
+    const now = Date.now()
+    rawDb
+      .prepare(
+        `INSERT INTO numbering_rules
+           (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+           VALUES ('numbering_rule_supplier', 'primary_company', 'supplier', 'SUP', 6, 'never', 0, NULL, ?, ?)`
+      )
+      .run(now, now)
+  }
+
+  describe('fresh database', () => {
+    it('applies all migrations 0000-0007 cleanly, including suppliers and supplier_item_prices', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tables = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tables.map((t) => t.name)).toContain('suppliers')
+      expect(tables.map((t) => t.name)).toContain('supplier_item_prices')
+
+      rawDb.close()
+    })
+
+    it('applies the expected indexes on supplier_item_prices', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const indexes = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+        .all('supplier_item_prices') as SqliteIndexRow[]
+      const names = indexes.map((i) => i.name)
+      expect(names).toContain('supplier_item_prices_supplier_idx')
+      expect(names).toContain('supplier_item_prices_item_idx')
+      expect(names).toContain('supplier_item_prices_supplier_item_effective_unique')
+
+      rawDb.close()
+    })
+
+    it('rejects a second supplier with a duplicate (company_id, code) pair', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      const insertSupplier = () =>
+        rawDb
+          .prepare(
+            `INSERT INTO suppliers (id, company_id, code, name, is_active, created_at, updated_at)
+             VALUES (?, 'primary_company', 'SUP-000001', 'Acme', 1, ?, ?)`
+          )
+          .run(`supplier_${Math.random()}`, Date.now(), Date.now())
+
+      insertSupplier()
+      expect(insertSupplier).toThrow(/UNIQUE constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('rejects a supplier company_id other than the singleton', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO suppliers (id, company_id, code, name, is_active, created_at, updated_at)
+             VALUES ('supplier_1', 'some_other_company', 'SUP-000001', 'Acme', 1, ?, ?)`
+          )
+          .run(Date.now(), Date.now())
+      ).toThrow()
+
+      rawDb.close()
+    })
+
+    it('rejects a negative price_minor on supplier_item_prices', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      seedSupplierNumberingRule(rawDb)
+      const supplier = createSupplier(db, { name: 'Acme' }, { type: 'system' })
+      const item = createInventoryItem(
+        db,
+        {
+          code: 'FLOUR',
+          name: 'Flour',
+          category: 'Dry goods',
+          itemType: 'ingredient',
+          unitOfMeasureId: 'uom_kg',
+          minimumStock: 0,
+          reorderQuantity: 0,
+          leadTimeDays: 0
+        },
+        { type: 'system' }
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO supplier_item_prices
+             (id, supplier_id, inventory_item_id, price_minor, currency_id, effective_from, created_at)
+             VALUES ('p1', ?, ?, -1, 'currency_usd', ?, ?)`
+          )
+          .run(supplier.id, item.id, Date.now(), Date.now())
+      ).toThrow(/CHECK constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('rejects a duplicate (supplier_id, inventory_item_id, effective_from) triple', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      seedSupplierNumberingRule(rawDb)
+      const supplier = createSupplier(db, { name: 'Acme' }, { type: 'system' })
+      const item = createInventoryItem(
+        db,
+        {
+          code: 'FLOUR',
+          name: 'Flour',
+          category: 'Dry goods',
+          itemType: 'ingredient',
+          unitOfMeasureId: 'uom_kg',
+          minimumStock: 0,
+          reorderQuantity: 0,
+          leadTimeDays: 0
+        },
+        { type: 'system' }
+      )
+      const effectiveFrom = Date.now()
+
+      rawDb
+        .prepare(
+          `INSERT INTO supplier_item_prices
+           (id, supplier_id, inventory_item_id, price_minor, currency_id, effective_from, created_at)
+           VALUES ('p1', ?, ?, 100, 'currency_usd', ?, ?)`
+        )
+        .run(supplier.id, item.id, effectiveFrom, Date.now())
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO supplier_item_prices
+             (id, supplier_id, inventory_item_id, price_minor, currency_id, effective_from, created_at)
+             VALUES ('p2', ?, ?, 200, 'currency_usd', ?, ?)`
+          )
+          .run(supplier.id, item.id, effectiveFrom, Date.now())
+      ).toThrow(/UNIQUE constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the supplier_id foreign key rejects a reference to a nonexistent supplier', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      const item = createInventoryItem(
+        db,
+        {
+          code: 'FLOUR',
+          name: 'Flour',
+          category: 'Dry goods',
+          itemType: 'ingredient',
+          unitOfMeasureId: 'uom_kg',
+          minimumStock: 0,
+          reorderQuantity: 0,
+          leadTimeDays: 0
+        },
+        { type: 'system' }
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO supplier_item_prices
+             (id, supplier_id, inventory_item_id, price_minor, currency_id, effective_from, created_at)
+             VALUES ('p1', 'does-not-exist', ?, 100, 'currency_usd', ?, ?)`
+          )
+          .run(item.id, Date.now(), Date.now())
+      ).toThrow(/FOREIGN KEY constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the inventory_item_id foreign key rejects a reference to a nonexistent item', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      seedSupplierNumberingRule(rawDb)
+      const supplier = createSupplier(db, { name: 'Acme' }, { type: 'system' })
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO supplier_item_prices
+             (id, supplier_id, inventory_item_id, price_minor, currency_id, effective_from, created_at)
+             VALUES ('p1', ?, 'does-not-exist', 100, 'currency_usd', ?, ?)`
+          )
+          .run(supplier.id, Date.now(), Date.now())
+      ).toThrow(/FOREIGN KEY constraint failed/)
+
+      rawDb.close()
+    })
+
+    it('the currency_id foreign key rejects a reference to a nonexistent currency', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb)
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      seedSupplierNumberingRule(rawDb)
+      const supplier = createSupplier(db, { name: 'Acme' }, { type: 'system' })
+      const item = createInventoryItem(
+        db,
+        {
+          code: 'FLOUR',
+          name: 'Flour',
+          category: 'Dry goods',
+          itemType: 'ingredient',
+          unitOfMeasureId: 'uom_kg',
+          minimumStock: 0,
+          reorderQuantity: 0,
+          leadTimeDays: 0
+        },
+        { type: 'system' }
+      )
+
+      expect(() =>
+        rawDb
+          .prepare(
+            `INSERT INTO supplier_item_prices
+             (id, supplier_id, inventory_item_id, price_minor, currency_id, effective_from, created_at)
+             VALUES ('p1', ?, ?, 100, 'does-not-exist', ?, ?)`
+          )
+          .run(supplier.id, item.id, Date.now(), Date.now())
+      ).toThrow(/FOREIGN KEY constraint failed/)
+
+      rawDb.close()
+    })
+  })
+
+  describe('upgrade from an approved Slice 12 database', () => {
+    it('a database with only migrations 0000-0006 applied upgrades cleanly through 0007, preserving all existing data', async () => {
+      const dbPath = join(dir, 'ledgerpage.db')
+      const truncatedMigrationsDir = join(dir, 'migrations-through-0006')
+      buildTruncatedMigrationsFolder(REAL_MIGRATIONS_FOLDER, truncatedMigrationsDir, 7)
+
+      // Simulate an approved Slice 12 install: only 0000-0006 applied.
+      const rawDb = createDatabaseConnection(dbPath)
+      runMigrations(rawDb, truncatedMigrationsDir)
+
+      const tablesBeforeUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesBeforeUpgrade.map((t) => t.name)).not.toContain('suppliers')
+
+      // Seed real Slice 5-12 data on this pre-Slice-13 database, via the
+      // real, audit-writing service functions.
+      seedReferenceData(rawDb)
+      seedRoles(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb) as AppDb
+      createCompany(
+        db,
+        {
+          name: 'Farmer Ben Sauces',
+          address: '1 Main St',
+          contactDetails: 'ben@example.com',
+          currencyId: 'currency_usd'
+        },
+        new Date()
+      )
+      const now = new Date()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_product', 'primary_company', 'product', 'PRD', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(now.getTime(), now.getTime())
+      const taxCode = createTaxCode(
+        db,
+        { code: 'STD', name: 'Standard', category: 'standard' },
+        { type: 'system' }
+      )
+      const passwordHash = await hashPassword(REAL_PASSWORD)
+      const owner = db.transaction((tx) =>
+        createUser(tx, { loginIdentifier: 'ben', displayName: 'Ben', passwordHash })
+      )
+      db.insert(userRoles)
+        .values({ userId: owner.id, roleId: 'role_owner', createdAt: new Date() })
+        .run()
+      const product = createProduct(
+        db,
+        { name: 'Chilli Sauce', type: 'manufactured' },
+        { type: 'system' }
+      )
+      const variant = createVariant(
+        db,
+        { productId: product.id, code: '100ML', name: '100 ml bottle', sellingPriceMinor: 1029 },
+        { type: 'system' }
+      )
+      const inventoryItem = createInventoryItem(
+        db,
+        {
+          code: 'FLOUR',
+          name: 'Flour',
+          category: 'Dry goods',
+          itemType: 'ingredient',
+          unitOfMeasureId: 'uom_kg',
+          minimumStock: 0,
+          reorderQuantity: 0,
+          leadTimeDays: 0
+        },
+        { type: 'system' }
+      )
+
+      const auditRowCountBeforeUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      expect(auditRowCountBeforeUpgrade).toBeGreaterThan(0)
+
+      // Now upgrade: apply the full, real migrations folder (0000-0007)
+      // against this same, already-populated database file.
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      // This test manually inserts numbering rules rather than going
+      // through the real first-run transaction (which would seed all 10
+      // approved defaults, including 'supplier', unconditionally) -- so
+      // the 'supplier' rule needs the same manual seeding here, applied
+      // after the upgrade to confirm it's exactly the kind of rule a
+      // real post-upgrade database would already have from Slice 8.
+      const supplierNumberingNow = Date.now()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_supplier', 'primary_company', 'supplier', 'SUP', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(supplierNumberingNow, supplierNumberingNow)
+
+      const tablesAfterUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('suppliers')
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('supplier_item_prices')
+
+      // The new supplier numbering rule is already present after the
+      // upgrade, seeded at first-run in Slice 8 (unused until now) --
+      // confirms a supplier can be created immediately post-upgrade.
+      const supplier = createSupplier(db, { name: 'Acme Foods' }, { type: 'system' })
+      expect(supplier.code).toBe('SUP-000001')
+      const price = recordSupplierPrice(
+        db,
+        {
+          supplierId: supplier.id,
+          inventoryItemId: inventoryItem.id,
+          priceMinor: 500,
+          effectiveFrom: new Date()
+        },
+        { type: 'system' }
+      )
+      expect(price.priceMinor).toBe(500)
+
+      // Every table's pre-existing data survives the upgrade intact.
+      const companyRow = rawDb.prepare('SELECT * FROM company').get() as
+        { name: string } | undefined
+      expect(companyRow?.name).toBe('Farmer Ben Sauces')
+
+      const taxCodeRow = rawDb.prepare('SELECT * FROM tax_codes WHERE id = ?').get(taxCode.id) as
+        { code: string } | undefined
+      expect(taxCodeRow?.code).toBe('STD')
+
+      const userRow = rawDb.prepare('SELECT * FROM users WHERE id = ?').get(owner.id) as
+        { login_identifier: string } | undefined
+      expect(userRow?.login_identifier).toBe('ben')
+
+      const productRow = rawDb.prepare('SELECT * FROM products WHERE id = ?').get(product.id) as
+        { code: string } | undefined
+      expect(productRow?.code).toBe('PRD-000001')
+
+      const variantRow = rawDb
+        .prepare('SELECT * FROM product_variants WHERE id = ?')
+        .get(variant.id) as { code: string } | undefined
+      expect(variantRow?.code).toBe('100ML')
+
+      const itemRow = rawDb
+        .prepare('SELECT * FROM inventory_items WHERE id = ?')
+        .get(inventoryItem.id) as { code: string } | undefined
+      expect(itemRow?.code).toBe('FLOUR')
+
+      const auditRowCountAfterUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      // The upgrade itself adds no audit rows; creating the supplier and
+      // recording its price afterward adds exactly 2 more.
+      expect(auditRowCountAfterUpgrade).toBe(auditRowCountBeforeUpgrade + 2)
+
+      rawDb.close()
+    }, 20000)
+  })
+
+  describe('no pre-existing migration was modified', () => {
+    it('migrations 0000-0006 remain byte-identical to their state at the approved m1-slice-12 tag', () => {
+      const filesToCheck = [
+        'migrations/0000_reference_data_tables.sql',
+        'migrations/0001_company_and_numbering_rules.sql',
+        'migrations/0002_tax_configuration.sql',
+        'migrations/0003_authentication_foundations.sql',
+        'migrations/0004_audit_logging.sql',
+        'migrations/0005_products_and_variants.sql',
+        'migrations/0006_inventory_items.sql'
+      ]
+
+      const diffOutput = execFileSync('git', ['diff', 'm1-slice-12', '--', ...filesToCheck], {
         cwd: process.cwd(),
         encoding: 'utf-8'
       })

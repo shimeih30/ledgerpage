@@ -49,6 +49,24 @@ export interface SafeSessionInfo {
    * individual mutating call, never this flag.
    */
   canManageInventoryItems: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Suppliers nav link / read-only view at all. Real enforcement is
+   * suppliers:*'s own requireAuthorizedCaller('suppliers.read') checks,
+   * resolved fresh from SQLite on every call.
+   */
+  canViewSuppliers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate/price-recording controls on the Suppliers
+   * screens. Real enforcement is suppliers:*'s own
+   * requireAuthorizedCaller('suppliers.manage') checks on each
+   * individual mutating call, never this flag. Unlike products/
+   * inventory items, all four roles (including Finance) receive
+   * suppliers.manage, per the approved decision that supplier and
+   * supplier-item pricing data is financial master data.
+   */
+  canManageSuppliers: boolean
 }
 
 export type LoginOutcome = { success: true; session: SafeSessionInfo } | { success: false }
@@ -67,6 +85,8 @@ export type SessionState =
       canManageProducts: boolean
       canViewInventoryItems: boolean
       canManageInventoryItems: boolean
+      canViewSuppliers: boolean
+      canManageSuppliers: boolean
     }
 
 export interface StartIdleLockTimerOptions {
@@ -142,7 +162,9 @@ function toSafeSessionInfo(user: SafeUser, roleCodes: readonly string[]): SafeSe
     canViewProducts: can({ roleCodes }, 'products.read'),
     canManageProducts: can({ roleCodes }, 'products.manage'),
     canViewInventoryItems: can({ roleCodes }, 'inventory_items.read'),
-    canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage')
+    canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage'),
+    canViewSuppliers: can({ roleCodes }, 'suppliers.read'),
+    canManageSuppliers: can({ roleCodes }, 'suppliers.manage')
   }
 }
 
@@ -265,7 +287,9 @@ export function createLoginService(options: LoginServiceOptions): LoginService {
         canViewProducts: can({ roleCodes }, 'products.read'),
         canManageProducts: can({ roleCodes }, 'products.manage'),
         canViewInventoryItems: can({ roleCodes }, 'inventory_items.read'),
-        canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage')
+        canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage'),
+        canViewSuppliers: can({ roleCodes }, 'suppliers.read'),
+        canManageSuppliers: can({ roleCodes }, 'suppliers.manage')
       }
     },
 

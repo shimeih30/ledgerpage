@@ -47,7 +47,17 @@ const EXPECTED_KEYS = [
   'updateInventoryItem',
   'deactivateInventoryItem',
   'reactivateInventoryItem',
-  'listAssignableUnitsOfMeasure'
+  'listAssignableUnitsOfMeasure',
+  'listSuppliers',
+  'getSupplier',
+  'createSupplier',
+  'updateSupplier',
+  'deactivateSupplier',
+  'reactivateSupplier',
+  'recordSupplierPrice',
+  'listPricesForSupplier',
+  'listPricesForInventoryItem',
+  'getCurrentSupplierItemPrice'
 ]
 
 describe('preload API surface', () => {
@@ -396,5 +406,72 @@ describe('preload API surface', () => {
     await api.listAssignableUnitsOfMeasure()
 
     expect(invoke).toHaveBeenCalledWith(INVENTORY_ITEMS_LIST_ASSIGNABLE_UNITS_CHANNEL)
+  })
+
+  it('listSuppliers invokes exactly the suppliers:list channel, with no arguments', async () => {
+    await import('../../src/preload/index')
+    const { SUPPLIERS_LIST_CHANNEL } = await import('../../src/shared/ipc/suppliers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as { listSuppliers: () => Promise<unknown> }
+    await api.listSuppliers()
+
+    expect(invoke).toHaveBeenCalledWith(SUPPLIERS_LIST_CHANNEL)
+  })
+
+  it('createSupplier forwards its input to the suppliers:create channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { SUPPLIERS_CREATE_CHANNEL } = await import('../../src/shared/ipc/suppliers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createSupplier: (input: unknown) => Promise<unknown>
+    }
+    const input = { name: 'Acme Foods' }
+    await api.createSupplier(input)
+
+    expect(invoke).toHaveBeenCalledWith(SUPPLIERS_CREATE_CHANNEL, input)
+  })
+
+  it('updateSupplier forwards its input to the suppliers:update channel unchanged -- structurally never a code field, since UpdateSupplierInput has no such property', async () => {
+    await import('../../src/preload/index')
+    const { SUPPLIERS_UPDATE_CHANNEL } = await import('../../src/shared/ipc/suppliers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      updateSupplier: (input: unknown) => Promise<unknown>
+    }
+    const input = { supplierId: 'supplier_1', name: 'New name' }
+    await api.updateSupplier(input)
+
+    expect(invoke).toHaveBeenCalledWith(SUPPLIERS_UPDATE_CHANNEL, input)
+  })
+
+  it('recordSupplierPrice forwards its input to the suppliers:record-price channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { SUPPLIER_PRICES_RECORD_CHANNEL } = await import('../../src/shared/ipc/suppliers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      recordSupplierPrice: (input: unknown) => Promise<unknown>
+    }
+    const input = {
+      supplierId: 'supplier_1',
+      inventoryItemId: 'inventory_item_1',
+      priceMinor: 1029,
+      effectiveFrom: Date.now()
+    }
+    await api.recordSupplierPrice(input)
+
+    expect(invoke).toHaveBeenCalledWith(SUPPLIER_PRICES_RECORD_CHANNEL, input)
+  })
+
+  it('getCurrentSupplierItemPrice invokes exactly the suppliers:get-current-price channel with its input', async () => {
+    await import('../../src/preload/index')
+    const { SUPPLIER_PRICES_GET_CURRENT_CHANNEL } = await import('../../src/shared/ipc/suppliers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      getCurrentSupplierItemPrice: (input: unknown) => Promise<unknown>
+    }
+    const input = { supplierId: 'supplier_1', inventoryItemId: 'inventory_item_1' }
+    await api.getCurrentSupplierItemPrice(input)
+
+    expect(invoke).toHaveBeenCalledWith(SUPPLIER_PRICES_GET_CURRENT_CHANNEL, input)
   })
 })

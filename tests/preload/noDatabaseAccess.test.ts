@@ -76,7 +76,17 @@ describe('preload API surface after Slice 3', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -166,7 +176,17 @@ describe('preload API surface after Slice 4', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -245,7 +265,17 @@ describe('preload API surface after Slice 5', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -325,7 +355,17 @@ describe('preload API surface after Slice 6', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -417,7 +457,17 @@ describe('preload API surface after Slice 7', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -509,7 +559,17 @@ describe('preload API surface after Slice 8', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -598,7 +658,17 @@ describe('preload API surface after Slice 9', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
   })
@@ -682,8 +752,46 @@ describe('preload API surface after Slice 10', () => {
         'updateInventoryItem',
         'deactivateInventoryItem',
         'reactivateInventoryItem',
-        'listAssignableUnitsOfMeasure'
+        'listAssignableUnitsOfMeasure',
+        'listSuppliers',
+        'getSupplier',
+        'createSupplier',
+        'updateSupplier',
+        'deactivateSupplier',
+        'reactivateSupplier',
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
       ].sort()
     )
+  })
+
+  /**
+   * Slice 13's supplier_item_prices table is append-only by design:
+   * insert, list, and current-price lookup only. This test exists to
+   * make that guarantee explicit at the preload layer specifically --
+   * no exposed method name anywhere in the API suggests an update,
+   * delete, edit, or removal operation on a price row. The service- and
+   * IPC-layer halves of this same guarantee are covered directly in
+   * registerSupplierHandlers.test.ts.
+   */
+  it('exposes no method that could update or delete a supplier price row', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const priceRelatedKeys = Object.keys(api).filter((key) => /price/i.test(key))
+
+    expect(priceRelatedKeys.sort()).toEqual(
+      [
+        'recordSupplierPrice',
+        'listPricesForSupplier',
+        'listPricesForInventoryItem',
+        'getCurrentSupplierItemPrice'
+      ].sort()
+    )
+    for (const key of priceRelatedKeys) {
+      expect(key).not.toMatch(/update|delete|edit|remove|deactivate|reactivate/i)
+    }
   })
 })
