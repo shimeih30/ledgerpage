@@ -57,7 +57,19 @@ const EXPECTED_KEYS = [
   'recordSupplierPrice',
   'listPricesForSupplier',
   'listPricesForInventoryItem',
-  'getCurrentSupplierItemPrice'
+  'getCurrentSupplierItemPrice',
+  'listCustomers',
+  'getCustomer',
+  'createCustomer',
+  'updateCustomer',
+  'deactivateCustomer',
+  'reactivateCustomer',
+  'listContactsForCustomer',
+  'getCustomerContact',
+  'createCustomerContact',
+  'updateCustomerContact',
+  'deactivateCustomerContact',
+  'reactivateCustomerContact'
 ]
 
 describe('preload API surface', () => {
@@ -473,5 +485,67 @@ describe('preload API surface', () => {
     await api.getCurrentSupplierItemPrice(input)
 
     expect(invoke).toHaveBeenCalledWith(SUPPLIER_PRICES_GET_CURRENT_CHANNEL, input)
+  })
+
+  it('listCustomers invokes exactly the customers:list channel, with no arguments', async () => {
+    await import('../../src/preload/index')
+    const { CUSTOMERS_LIST_CHANNEL } = await import('../../src/shared/ipc/customers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as { listCustomers: () => Promise<unknown> }
+    await api.listCustomers()
+
+    expect(invoke).toHaveBeenCalledWith(CUSTOMERS_LIST_CHANNEL)
+  })
+
+  it('createCustomer forwards its input to the customers:create channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { CUSTOMERS_CREATE_CHANNEL } = await import('../../src/shared/ipc/customers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createCustomer: (input: unknown) => Promise<unknown>
+    }
+    const input = { name: 'Acme Retail' }
+    await api.createCustomer(input)
+
+    expect(invoke).toHaveBeenCalledWith(CUSTOMERS_CREATE_CHANNEL, input)
+  })
+
+  it('listContactsForCustomer forwards its input to the customers:list-contacts channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { CUSTOMER_CONTACTS_LIST_CHANNEL } = await import('../../src/shared/ipc/customers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listContactsForCustomer: (input: unknown) => Promise<unknown>
+    }
+    const input = { customerId: 'customer_1' }
+    await api.listContactsForCustomer(input)
+
+    expect(invoke).toHaveBeenCalledWith(CUSTOMER_CONTACTS_LIST_CHANNEL, input)
+  })
+
+  it('createCustomerContact forwards its input to the customers:create-contact channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { CUSTOMER_CONTACTS_CREATE_CHANNEL } = await import('../../src/shared/ipc/customers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createCustomerContact: (input: unknown) => Promise<unknown>
+    }
+    const input = { customerId: 'customer_1', name: 'Jane Doe' }
+    await api.createCustomerContact(input)
+
+    expect(invoke).toHaveBeenCalledWith(CUSTOMER_CONTACTS_CREATE_CHANNEL, input)
+  })
+
+  it('deactivateCustomerContact forwards its input to the customers:deactivate-contact channel unchanged', async () => {
+    await import('../../src/preload/index')
+    const { CUSTOMER_CONTACTS_DEACTIVATE_CHANNEL } = await import('../../src/shared/ipc/customers')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      deactivateCustomerContact: (input: unknown) => Promise<unknown>
+    }
+    const input = { contactId: 'contact_1' }
+    await api.deactivateCustomerContact(input)
+
+    expect(invoke).toHaveBeenCalledWith(CUSTOMER_CONTACTS_DEACTIVATE_CHANNEL, input)
   })
 })

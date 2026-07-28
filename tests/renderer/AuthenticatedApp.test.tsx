@@ -65,7 +65,19 @@ function installMockApi(overrides: {
     recordSupplierPrice: vi.fn(),
     listPricesForSupplier: vi.fn().mockResolvedValue({ success: true, prices: [] }),
     listPricesForInventoryItem: vi.fn().mockResolvedValue({ success: true, prices: [] }),
-    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null })
+    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null }),
+    listCustomers: vi.fn().mockResolvedValue({ success: true, customers: [] }),
+    getCustomer: vi.fn(),
+    createCustomer: vi.fn(),
+    updateCustomer: vi.fn(),
+    deactivateCustomer: vi.fn(),
+    reactivateCustomer: vi.fn(),
+    listContactsForCustomer: vi.fn().mockResolvedValue({ success: true, contacts: [] }),
+    getCustomerContact: vi.fn(),
+    createCustomerContact: vi.fn(),
+    updateCustomerContact: vi.fn(),
+    deactivateCustomerContact: vi.fn(),
+    reactivateCustomerContact: vi.fn()
   }
 }
 
@@ -103,7 +115,9 @@ describe('AuthenticatedApp', () => {
           canViewInventoryItems: true,
           canManageInventoryItems: true,
           canViewSuppliers: true,
-          canManageSuppliers: true
+          canManageSuppliers: true,
+          canViewCustomers: true,
+          canManageCustomers: true
         })
     })
     render(<AuthenticatedApp />)
@@ -132,7 +146,9 @@ describe('AuthenticatedApp', () => {
           canViewInventoryItems: true,
           canManageInventoryItems: true,
           canViewSuppliers: true,
-          canManageSuppliers: true
+          canManageSuppliers: true,
+          canViewCustomers: true,
+          canManageCustomers: true
         })
         .mockResolvedValue({ state: 'locked', displayName: 'Ben' })
       installMockApi({ getSessionState })
@@ -167,7 +183,9 @@ describe('AuthenticatedApp', () => {
             canViewInventoryItems: true,
             canManageInventoryItems: true,
             canViewSuppliers: true,
-            canManageSuppliers: true
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true
           }),
         touchSession
       })
@@ -198,7 +216,9 @@ describe('AuthenticatedApp', () => {
             canViewInventoryItems: true,
             canManageInventoryItems: true,
             canViewSuppliers: true,
-            canManageSuppliers: true
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true
           }
         })
       })
@@ -227,7 +247,9 @@ describe('AuthenticatedApp', () => {
             canViewInventoryItems: true,
             canManageInventoryItems: true,
             canViewSuppliers: true,
-            canManageSuppliers: true
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true
           }
         })
       })
@@ -254,7 +276,9 @@ describe('AuthenticatedApp', () => {
             canViewInventoryItems: true,
             canManageInventoryItems: true,
             canViewSuppliers: true,
-            canManageSuppliers: true
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true
           })
       })
       render(<AuthenticatedApp />)

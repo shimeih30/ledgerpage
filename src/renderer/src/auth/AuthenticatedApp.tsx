@@ -32,7 +32,9 @@ function toAuthAppState(sessionState: SessionState): AuthAppState {
       canViewInventoryItems: sessionState.canViewInventoryItems,
       canManageInventoryItems: sessionState.canManageInventoryItems,
       canViewSuppliers: sessionState.canViewSuppliers,
-      canManageSuppliers: sessionState.canManageSuppliers
+      canManageSuppliers: sessionState.canManageSuppliers,
+      canViewCustomers: sessionState.canViewCustomers,
+      canManageCustomers: sessionState.canManageCustomers
     }
   }
 }

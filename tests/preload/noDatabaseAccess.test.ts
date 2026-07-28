@@ -86,7 +86,19 @@ describe('preload API surface after Slice 3', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -186,7 +198,19 @@ describe('preload API surface after Slice 4', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -275,7 +299,19 @@ describe('preload API surface after Slice 5', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -365,7 +401,19 @@ describe('preload API surface after Slice 6', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -467,7 +515,19 @@ describe('preload API surface after Slice 7', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -569,7 +629,19 @@ describe('preload API surface after Slice 8', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -668,7 +740,19 @@ describe('preload API surface after Slice 9', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -762,7 +846,19 @@ describe('preload API surface after Slice 10', () => {
         'recordSupplierPrice',
         'listPricesForSupplier',
         'listPricesForInventoryItem',
-        'getCurrentSupplierItemPrice'
+        'getCurrentSupplierItemPrice',
+        'listCustomers',
+        'getCustomer',
+        'createCustomer',
+        'updateCustomer',
+        'deactivateCustomer',
+        'reactivateCustomer',
+        'listContactsForCustomer',
+        'getCustomerContact',
+        'createCustomerContact',
+        'updateCustomerContact',
+        'deactivateCustomerContact',
+        'reactivateCustomerContact'
       ].sort()
     )
   })
@@ -792,6 +888,37 @@ describe('preload API surface after Slice 10', () => {
     )
     for (const key of priceRelatedKeys) {
       expect(key).not.toMatch(/update|delete|edit|remove|deactivate|reactivate/i)
+    }
+  })
+
+  /**
+   * Slice 14's customer_contacts table uses soft activation only, the
+   * same append-only-style guarantee as Slice 13's supplier prices,
+   * just with an update path (unlike prices) rather than none at all.
+   * No exposed method name anywhere in the API suggests a hard delete
+   * or removal of a contact, and no customer method allows selecting or
+   * mutating a currency -- currencyId is always FUNCTIONAL_CURRENCY_ID,
+   * assigned server-side.
+   */
+  it('exposes no method that could hard-delete a customer contact, and no customer currency-selection or currency-mutation method', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api)
+
+    expect(exposedKeys).not.toContain('deleteCustomerContact')
+    expect(exposedKeys).not.toContain('removeCustomerContact')
+    expect(exposedKeys).not.toContain('deleteCustomer')
+    expect(exposedKeys).not.toContain('removeCustomer')
+
+    const contactRelatedKeys = exposedKeys.filter((key) => /contact/i.test(key))
+    for (const key of contactRelatedKeys) {
+      expect(key).not.toMatch(/delete|remove/i)
+    }
+
+    const customerRelatedKeys = exposedKeys.filter((key) => /customer/i.test(key))
+    for (const key of customerRelatedKeys) {
+      expect(key.toLowerCase()).not.toContain('currency')
     }
   })
 })

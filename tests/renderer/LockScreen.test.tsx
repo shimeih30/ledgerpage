@@ -57,7 +57,19 @@ function installMockApi(unlockSession: () => Promise<UnlockResult>): void {
     recordSupplierPrice: vi.fn(),
     listPricesForSupplier: vi.fn().mockResolvedValue({ success: true, prices: [] }),
     listPricesForInventoryItem: vi.fn().mockResolvedValue({ success: true, prices: [] }),
-    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null })
+    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null }),
+    listCustomers: vi.fn().mockResolvedValue({ success: true, customers: [] }),
+    getCustomer: vi.fn(),
+    createCustomer: vi.fn(),
+    updateCustomer: vi.fn(),
+    deactivateCustomer: vi.fn(),
+    reactivateCustomer: vi.fn(),
+    listContactsForCustomer: vi.fn().mockResolvedValue({ success: true, contacts: [] }),
+    getCustomerContact: vi.fn(),
+    createCustomerContact: vi.fn(),
+    updateCustomerContact: vi.fn(),
+    deactivateCustomerContact: vi.fn(),
+    reactivateCustomerContact: vi.fn()
   }
 }
 
@@ -84,7 +96,9 @@ describe('LockScreen', () => {
           canViewInventoryItems: true,
           canManageInventoryItems: true,
           canViewSuppliers: true,
-          canManageSuppliers: true
+          canManageSuppliers: true,
+          canViewCustomers: true,
+          canManageCustomers: true
         }
       })
     )
@@ -104,7 +118,9 @@ describe('LockScreen', () => {
       canViewInventoryItems: true,
       canManageInventoryItems: true,
       canViewSuppliers: true,
-      canManageSuppliers: true
+      canManageSuppliers: true,
+      canViewCustomers: true,
+      canManageCustomers: true
     })
   })
 
@@ -123,7 +139,9 @@ describe('LockScreen', () => {
           canViewInventoryItems: true,
           canManageInventoryItems: true,
           canViewSuppliers: true,
-          canManageSuppliers: true
+          canManageSuppliers: true,
+          canViewCustomers: true,
+          canManageCustomers: true
         }
       })
     installMockApi(unlockSession)
@@ -149,7 +167,9 @@ describe('LockScreen', () => {
       canViewInventoryItems: true,
       canManageInventoryItems: true,
       canViewSuppliers: true,
-      canManageSuppliers: true
+      canManageSuppliers: true,
+      canViewCustomers: true,
+      canManageCustomers: true
     })
   })
 
@@ -179,7 +199,9 @@ describe('LockScreen', () => {
         canViewInventoryItems: true,
         canManageInventoryItems: true,
         canViewSuppliers: true,
-        canManageSuppliers: true
+        canManageSuppliers: true,
+        canViewCustomers: true,
+        canManageCustomers: true
       }
     })
   })

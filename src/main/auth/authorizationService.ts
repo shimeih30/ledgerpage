@@ -21,7 +21,9 @@ export const ACTIONS = [
   'inventory_items.read',
   'inventory_items.manage',
   'suppliers.read',
-  'suppliers.manage'
+  'suppliers.manage',
+  'customers.read',
+  'customers.manage'
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -91,6 +93,12 @@ export interface AuthPrincipal {
  * products.read/products.manage directly rather than having its own
  * pair.
  *
+ * Slice 14 (customers.read/customers.manage): approved decision mirrors
+ * Slice 13's all-four-roles pattern — owner, executive, operations, and
+ * finance all receive both. This action pair is also reused, unchanged,
+ * for customer_contacts — there is no separate action for contact
+ * management, mirroring supplier_item_prices' own precedent.
+ *
  * owner always receives every defined action, computed from ACTIONS
  * rather than hand-duplicated, so a newly added action is automatically
  * granted to owner without this file needing a matching edit.
@@ -106,7 +114,9 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'inventory_items.read',
     'inventory_items.manage',
     'suppliers.read',
-    'suppliers.manage'
+    'suppliers.manage',
+    'customers.read',
+    'customers.manage'
   ],
   operations: [
     'numbering.read',
@@ -115,7 +125,9 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'inventory_items.read',
     'inventory_items.manage',
     'suppliers.read',
-    'suppliers.manage'
+    'suppliers.manage',
+    'customers.read',
+    'customers.manage'
   ],
   finance: [
     'company.read',
@@ -126,7 +138,9 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'products.read',
     'inventory_items.read',
     'suppliers.read',
-    'suppliers.manage'
+    'suppliers.manage',
+    'customers.read',
+    'customers.manage'
   ]
 }
 

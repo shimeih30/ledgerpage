@@ -160,7 +160,9 @@ describe('registerLoginHandlers', () => {
           canViewInventoryItems: true,
           canManageInventoryItems: true,
           canViewSuppliers: true,
-          canManageSuppliers: true
+          canManageSuppliers: true,
+          canViewCustomers: true,
+          canManageCustomers: true
         }
       })
       expect(Object.keys(result as object)).not.toContain('sessionId')
@@ -198,7 +200,9 @@ describe('registerLoginHandlers', () => {
         canViewInventoryItems: true,
         canManageInventoryItems: true,
         canViewSuppliers: true,
-        canManageSuppliers: true
+        canManageSuppliers: true,
+        canViewCustomers: true,
+        canManageCustomers: true
       })
     })
   })

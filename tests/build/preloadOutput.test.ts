@@ -173,7 +173,19 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'recordSupplierPrice',
           'listPricesForSupplier',
           'listPricesForInventoryItem',
-          'getCurrentSupplierItemPrice'
+          'getCurrentSupplierItemPrice',
+          'listCustomers',
+          'getCustomer',
+          'createCustomer',
+          'updateCustomer',
+          'deactivateCustomer',
+          'reactivateCustomer',
+          'listContactsForCustomer',
+          'getCustomerContact',
+          'createCustomerContact',
+          'updateCustomerContact',
+          'deactivateCustomerContact',
+          'reactivateCustomerContact'
         ].sort()
       )
     })

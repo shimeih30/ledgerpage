@@ -67,6 +67,23 @@ export interface SafeSessionInfo {
    * supplier-item pricing data is financial master data.
    */
   canManageSuppliers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Customers nav link / read-only view at all. Real enforcement is
+   * customers:*'s own requireAuthorizedCaller('customers.read') checks,
+   * resolved fresh from SQLite on every call.
+   */
+  canViewCustomers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows
+   * create/edit/deactivate/contact-management controls on the Customers
+   * screens. Real enforcement is customers:*'s own
+   * requireAuthorizedCaller('customers.manage') checks on each
+   * individual mutating call, never this flag. All four roles
+   * (including Finance) receive customers.manage, mirroring Suppliers'
+   * own precedent.
+   */
+  canManageCustomers: boolean
 }
 
 export type LoginOutcome = { success: true; session: SafeSessionInfo } | { success: false }
@@ -87,6 +104,8 @@ export type SessionState =
       canManageInventoryItems: boolean
       canViewSuppliers: boolean
       canManageSuppliers: boolean
+      canViewCustomers: boolean
+      canManageCustomers: boolean
     }
 
 export interface StartIdleLockTimerOptions {
@@ -164,7 +183,9 @@ function toSafeSessionInfo(user: SafeUser, roleCodes: readonly string[]): SafeSe
     canViewInventoryItems: can({ roleCodes }, 'inventory_items.read'),
     canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage'),
     canViewSuppliers: can({ roleCodes }, 'suppliers.read'),
-    canManageSuppliers: can({ roleCodes }, 'suppliers.manage')
+    canManageSuppliers: can({ roleCodes }, 'suppliers.manage'),
+    canViewCustomers: can({ roleCodes }, 'customers.read'),
+    canManageCustomers: can({ roleCodes }, 'customers.manage')
   }
 }
 
@@ -289,7 +310,9 @@ export function createLoginService(options: LoginServiceOptions): LoginService {
         canViewInventoryItems: can({ roleCodes }, 'inventory_items.read'),
         canManageInventoryItems: can({ roleCodes }, 'inventory_items.manage'),
         canViewSuppliers: can({ roleCodes }, 'suppliers.read'),
-        canManageSuppliers: can({ roleCodes }, 'suppliers.manage')
+        canManageSuppliers: can({ roleCodes }, 'suppliers.manage'),
+        canViewCustomers: can({ roleCodes }, 'customers.read'),
+        canManageCustomers: can({ roleCodes }, 'customers.manage')
       }
     },
 

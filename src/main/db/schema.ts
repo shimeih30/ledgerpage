@@ -748,3 +748,91 @@ export const supplierItemPrices = sqliteTable(
     index('supplier_item_prices_item_idx').on(t.inventoryItemId, t.effectiveFrom)
   ]
 )
+
+/**
+ * Slice 14: customer master data — pure reference data, independent of
+ * any order/quotation/invoice (Sales tier, later). Supports businesses
+ * and individuals through the same structure, by approved decision — no
+ * customerType column; `name` is the display name for either.
+ *
+ * code is system-generated, mirroring suppliers.code exactly: the
+ * `customer` document type is present in the frozen
+ * APPROVED_NUMBERING_DEFAULTS (CUS, never-reset, 6-digit padding) and
+ * already seeded, unused, at first-run since Slice 8. Never accepted as
+ * create or update input — allocated inside the same transaction as the
+ * insert and its audit row.
+ *
+ * payment_terms_days is a plain nullable integer (no payment-terms
+ * reference table, per approved decision) — null means no default
+ * configured, 0 means due immediately.
+ *
+ * credit_limit_minor is nullable integer minor units; null means no
+ * configured limit, NOT unlimited credit. currency_id exists on the row
+ * but every write pins it to FUNCTIONAL_CURRENCY_ID, mirroring
+ * product_variants.currency_id's and supplier_item_prices.currency_id's
+ * own precedent exactly — never accepted from a caller. This slice
+ * stores the limit only; it calculates no balance, no remaining credit,
+ * and enforces nothing.
+ */
+export const customers = sqliteTable(
+  'customers',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    contactDetails: text('contact_details'),
+    paymentTermsDays: integer('payment_terms_days'),
+    creditLimitMinor: integer('credit_limit_minor'),
+    currencyId: text('currency_id')
+      .notNull()
+      .references(() => currencies.id),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('customers_company_code_unique').on(t.companyId, t.code),
+    check('customers_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`),
+    check(
+      'customers_payment_terms_days_non_negative',
+      sql`${t.paymentTermsDays} IS NULL OR ${t.paymentTermsDays} >= 0`
+    ),
+    check(
+      'customers_credit_limit_non_negative',
+      sql`${t.creditLimitMinor} IS NULL OR ${t.creditLimitMinor} >= 0`
+    )
+  ]
+)
+
+/**
+ * A simple, non-append-only child list — unlike supplier_item_prices,
+ * this is ordinary reference data with its own lifecycle, using soft
+ * activation only (approved decision: no hard delete, matching this
+ * codebase's established deactivate/reactivate posture for every other
+ * business record). Deactivating a customer never cascades to its
+ * contacts; an inactive customer's contacts remain fully visible for
+ * historical reference, but no contact mutation is permitted while the
+ * parent customer itself is inactive (enforced in the service layer,
+ * not expressible as a CHECK constraint since SQLite CHECK constraints
+ * cannot see another table's row).
+ */
+export const customerContacts = sqliteTable(
+  'customer_contacts',
+  {
+    id: text('id').primaryKey(),
+    customerId: text('customer_id')
+      .notNull()
+      .references(() => customers.id),
+    name: text('name').notNull(),
+    role: text('role'),
+    phone: text('phone'),
+    email: text('email'),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [index('customer_contacts_customer_idx').on(t.customerId)]
+)
