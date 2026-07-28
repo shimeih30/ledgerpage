@@ -805,6 +805,63 @@ accounting posting.
 - ~500 customers can be created and searched without a noticeable UI
   delay (sanity check against stated MVP scale).
 
+**Decisions approved for this slice (owner review, following the
+pre-implementation plan above).**
+
+1. **Customer code.** System-generated, using the existing frozen
+   `customer` numbering rule (already seeded, unused, at first-run
+   since Slice 8) — unlike `inventory_items.code`, mirroring
+   `suppliers.code` exactly. Allocated inside the same transaction as
+   the customer insert and its audit row. Immutable after creation.
+2. **Credit limits vs. balances — the key scope decision.** Credit
+   limits belong in customer master data; balances and credit
+   enforcement do not. `creditLimitMinor` is stored and editable here
+   as a nullable integer-minor-units field (`null` = no configured
+   limit, not unlimited credit); this slice calculates no balance, no
+   remaining credit, and enforces nothing against it.
+   Outstanding-balance display and any credit-enforcement logic remain
+   deferred to Slice 23.
+3. **Permissions.** `owner`, `executive`, `operations`, and `finance`
+   all receive both `customers.read` and `customers.manage`, mirroring
+   Suppliers' own precedent. `customer_contacts` reuses these same two
+   actions; no separate action pair was introduced for contacts. Two
+   new cosmetic session flags — `canViewCustomers`,
+   `canManageCustomers` — gate renderer nav/UI visibility only; real
+   enforcement remains `requireAuthorizedCaller`, resolved fresh from
+   SQLite on every call.
+4. **Business vs. individual customers.** No `customerType` column or
+   equivalent distinction was introduced; the same structure serves
+   both, with `name` as the display name for either.
+5. **Contact details.** Nullable, trimmed; a blank value normalizes to
+   `null`.
+6. **Payment terms.** A plain nullable integer (`paymentTermsDays`) —
+   no payment-terms reference table was introduced, a new concept with
+   no prior pattern to mirror. `null` means no default configured; `0`
+   is a valid "due immediately" value, never treated as absent.
+7. **Customer contacts.** A simple, non-append-only child list using
+   soft activation only (deactivate/reactivate) — no hard delete,
+   matching this codebase's established posture for every other
+   business record. Mutations require the parent customer to be
+   currently active; reads are never gated this way, so an inactive
+   customer's contacts remain visible for historical reference.
+   Deactivating a customer never cascades to its contacts. A contact's
+   parent is fixed at creation and cannot be reassigned via update.
+8. **Contact validation.** `role`, `phone`, and `email` are all
+   optional with no format validation and no requirement that at least
+   one be present — no established convention exists anywhere in this
+   codebase for either.
+9. **Currency.** `currencyId` exists as a column on `customers` but is
+   always assigned `FUNCTIONAL_CURRENCY_ID` server-side; the renderer
+   cannot submit or choose a currency.
+10. **No tax field.** No customer tax-exemption flag, default tax code,
+    or other tax-treatment field was introduced — none is named in the
+    approved scope.
+11. **Search.** `CustomerListScreen` implements client-side,
+    case-insensitive search over code/name/contactDetails, required by
+    the acceptance criterion that ~500 customers be searchable — a new
+    UI pattern relative to Products/Inventory Items/Suppliers' own
+    plain, unfiltered list screens.
+
 ---
 
 ### Slice 15 — Inventory Lots & Stock Ledger (FIFO)

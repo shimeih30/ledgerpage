@@ -127,6 +127,37 @@ import {
   type UpdateSupplierInput,
   type UpdateSupplierResult
 } from '../shared/ipc/suppliers'
+import {
+  CUSTOMER_CONTACTS_CREATE_CHANNEL,
+  CUSTOMER_CONTACTS_DEACTIVATE_CHANNEL,
+  CUSTOMER_CONTACTS_GET_CHANNEL,
+  CUSTOMER_CONTACTS_LIST_CHANNEL,
+  CUSTOMER_CONTACTS_REACTIVATE_CHANNEL,
+  CUSTOMER_CONTACTS_UPDATE_CHANNEL,
+  CUSTOMERS_CREATE_CHANNEL,
+  CUSTOMERS_DEACTIVATE_CHANNEL,
+  CUSTOMERS_GET_CHANNEL,
+  CUSTOMERS_LIST_CHANNEL,
+  CUSTOMERS_REACTIVATE_CHANNEL,
+  CUSTOMERS_UPDATE_CHANNEL,
+  type CreateCustomerContactInput,
+  type CreateCustomerContactResult,
+  type CreateCustomerInput,
+  type CreateCustomerResult,
+  type CustomerContactIdInput,
+  type CustomerIdInput,
+  type GetCustomerContactResult,
+  type GetCustomerResult,
+  type LedgerPageCustomersApi,
+  type ListCustomerContactsResult,
+  type ListCustomersResult,
+  type MutateCustomerContactResult,
+  type MutateCustomerResult,
+  type UpdateCustomerContactInput,
+  type UpdateCustomerContactResult,
+  type UpdateCustomerInput,
+  type UpdateCustomerResult
+} from '../shared/ipc/customers'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -168,7 +199,8 @@ const api: LedgerPageApi &
   LedgerPageAuditApi &
   LedgerPageProductsApi &
   LedgerPageInventoryItemsApi &
-  LedgerPageSuppliersApi = {
+  LedgerPageSuppliersApi &
+  LedgerPageCustomersApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -306,7 +338,50 @@ const api: LedgerPageApi &
   getCurrentSupplierItemPrice: (
     input: SupplierItemPairInput
   ): Promise<GetCurrentSupplierItemPriceResult> =>
-    ipcRenderer.invoke(SUPPLIER_PRICES_GET_CURRENT_CHANNEL, input)
+    ipcRenderer.invoke(SUPPLIER_PRICES_GET_CURRENT_CHANNEL, input),
+
+  listCustomers: (): Promise<ListCustomersResult> => ipcRenderer.invoke(CUSTOMERS_LIST_CHANNEL),
+
+  getCustomer: (input: CustomerIdInput): Promise<GetCustomerResult> =>
+    ipcRenderer.invoke(CUSTOMERS_GET_CHANNEL, input),
+
+  createCustomer: (input: CreateCustomerInput): Promise<CreateCustomerResult> =>
+    ipcRenderer.invoke(CUSTOMERS_CREATE_CHANNEL, input),
+
+  updateCustomer: (input: UpdateCustomerInput): Promise<UpdateCustomerResult> =>
+    ipcRenderer.invoke(CUSTOMERS_UPDATE_CHANNEL, input),
+
+  deactivateCustomer: (input: CustomerIdInput): Promise<MutateCustomerResult> =>
+    ipcRenderer.invoke(CUSTOMERS_DEACTIVATE_CHANNEL, input),
+
+  reactivateCustomer: (input: CustomerIdInput): Promise<MutateCustomerResult> =>
+    ipcRenderer.invoke(CUSTOMERS_REACTIVATE_CHANNEL, input),
+
+  listContactsForCustomer: (input: CustomerIdInput): Promise<ListCustomerContactsResult> =>
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_LIST_CHANNEL, input),
+
+  getCustomerContact: (input: CustomerContactIdInput): Promise<GetCustomerContactResult> =>
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_GET_CHANNEL, input),
+
+  createCustomerContact: (
+    input: CreateCustomerContactInput
+  ): Promise<CreateCustomerContactResult> =>
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_CREATE_CHANNEL, input),
+
+  updateCustomerContact: (
+    input: UpdateCustomerContactInput
+  ): Promise<UpdateCustomerContactResult> =>
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_UPDATE_CHANNEL, input),
+
+  deactivateCustomerContact: (
+    input: CustomerContactIdInput
+  ): Promise<MutateCustomerContactResult> =>
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_DEACTIVATE_CHANNEL, input),
+
+  reactivateCustomerContact: (
+    input: CustomerContactIdInput
+  ): Promise<MutateCustomerContactResult> =>
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_REACTIVATE_CHANNEL, input)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

@@ -57,7 +57,19 @@ function installMockApi(): void {
     recordSupplierPrice: vi.fn(),
     listPricesForSupplier: vi.fn().mockResolvedValue({ success: true, prices: [] }),
     listPricesForInventoryItem: vi.fn().mockResolvedValue({ success: true, prices: [] }),
-    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null })
+    getCurrentSupplierItemPrice: vi.fn().mockResolvedValue({ success: true, price: null }),
+    listCustomers: vi.fn().mockResolvedValue({ success: true, customers: [] }),
+    getCustomer: vi.fn(),
+    createCustomer: vi.fn(),
+    updateCustomer: vi.fn(),
+    deactivateCustomer: vi.fn(),
+    reactivateCustomer: vi.fn(),
+    listContactsForCustomer: vi.fn().mockResolvedValue({ success: true, contacts: [] }),
+    getCustomerContact: vi.fn(),
+    createCustomerContact: vi.fn(),
+    updateCustomerContact: vi.fn(),
+    deactivateCustomerContact: vi.fn(),
+    reactivateCustomerContact: vi.fn()
   }
 }
 
@@ -72,6 +84,8 @@ function session(overrides: Partial<SafeSessionInfo>): SafeSessionInfo {
     canManageInventoryItems: false,
     canViewSuppliers: false,
     canManageSuppliers: false,
+    canViewCustomers: false,
+    canManageCustomers: false,
     ...overrides
   }
 }
@@ -595,6 +609,124 @@ describe('AuthenticatedShell navigation', () => {
 
       await user.click(screen.getByRole('button', { name: 'Back' }))
       expect(await screen.findByText('No suppliers yet.')).toBeDefined()
+    })
+  })
+
+  describe('Customers navigation', () => {
+    it('shows the Customers link only when canViewCustomers is true', () => {
+      installMockApi()
+      render(
+        <AuthenticatedShell session={session({ canViewCustomers: true })} onLoggedOut={vi.fn()} />
+      )
+      expect(screen.getByRole('button', { name: 'Customers' })).toBeDefined()
+    })
+
+    it('hides the Customers link when canViewCustomers is false', () => {
+      installMockApi()
+      render(
+        <AuthenticatedShell session={session({ canViewCustomers: false })} onLoggedOut={vi.fn()} />
+      )
+      expect(screen.queryByRole('button', { name: 'Customers' })).toBeNull()
+    })
+
+    it('clicking Customers navigates to the customer list', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell session={session({ canViewCustomers: true })} onLoggedOut={vi.fn()} />
+      )
+      await user.click(screen.getByRole('button', { name: 'Customers' }))
+      expect(await screen.findByText('No customers yet.')).toBeDefined()
+    })
+
+    it('New customer opens create mode', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewCustomers: true, canManageCustomers: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Customers' }))
+      await user.click(await screen.findByRole('button', { name: 'New customer' }))
+      expect(await screen.findByRole('button', { name: 'Create customer' })).toBeDefined()
+    })
+
+    it('selecting a row opens detail mode for that customer', async () => {
+      installMockApi()
+      const seededCustomer = {
+        id: 'customer_1',
+        code: 'CUS-000001',
+        name: 'Acme Retail',
+        contactDetails: null,
+        paymentTermsDays: null,
+        creditLimitMinor: null,
+        currencyId: 'currency_usd',
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      window.ledgerpage.listCustomers = vi
+        .fn()
+        .mockResolvedValue({ success: true, customers: [seededCustomer] })
+      window.ledgerpage.getCustomer = vi
+        .fn()
+        .mockResolvedValue({ success: true, customer: seededCustomer })
+      window.ledgerpage.listContactsForCustomer = vi
+        .fn()
+        .mockResolvedValue({ success: true, contacts: [] })
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewCustomers: true, canManageCustomers: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Customers' }))
+      await user.click(await screen.findByRole('button', { name: 'Edit' }))
+      expect(await screen.findByText('Acme Retail')).toBeDefined()
+    })
+
+    it('successful creation opens the generated customer detail, then Back returns to the list', async () => {
+      installMockApi()
+      const createdCustomer = {
+        id: 'customer_new',
+        code: 'CUS-000001',
+        name: 'Acme Retail',
+        contactDetails: null,
+        paymentTermsDays: null,
+        creditLimitMinor: null,
+        currencyId: 'currency_usd',
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      window.ledgerpage.createCustomer = vi
+        .fn()
+        .mockResolvedValue({ success: true, customer: createdCustomer })
+      window.ledgerpage.getCustomer = vi
+        .fn()
+        .mockResolvedValue({ success: true, customer: createdCustomer })
+      window.ledgerpage.listContactsForCustomer = vi
+        .fn()
+        .mockResolvedValue({ success: true, contacts: [] })
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewCustomers: true, canManageCustomers: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Customers' }))
+      await user.click(await screen.findByRole('button', { name: 'New customer' }))
+      await user.type(screen.getByLabelText('Name'), 'Acme Retail')
+      await user.click(screen.getByRole('button', { name: 'Create customer' }))
+
+      expect(await screen.findByText('Acme Retail')).toBeDefined()
+
+      await user.click(screen.getByRole('button', { name: 'Back' }))
+      expect(await screen.findByText('No customers yet.')).toBeDefined()
     })
   })
 })

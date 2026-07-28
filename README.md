@@ -11,7 +11,7 @@ LedgerPage is being built first for Farmer Ben's (a chilli sauce
 manufacturer) but is designed as a configurable product, not a
 single-company tool.
 
-## Current status: M1, Slice 13
+## Current status: M1, Slice 14
 
 The application shell (Slice 1) is hardened (Slice 2) and bootstraps its
 local SQLite database on startup (Slice 3, with a single-instance lock).
@@ -573,6 +573,90 @@ receipts, supplier payments/balances, and accounts payable (Slice 18 and
 later); any accounting posting; purchase packs or unit-conversion
 factors between a supplier's purchase unit and an item's base unit; and
 any separate supplier-item relationship independent of a recorded price.
+
+### Customers
+
+The fourth master-data module: customer master data and a simple,
+editable list of contacts per customer — entirely independent of any
+order, quotation, or invoice (Sales tier, later). Supports businesses
+and individuals through the same structure, by approved decision — there
+is no `customerType` column; `name` is simply the display name for
+either.
+
+`customers.code` is system-generated, mirroring `suppliers.code`
+exactly: the `customer` document type is present in the frozen
+`APPROVED_NUMBERING_DEFAULTS` (`CUS`, never-reset, 6-digit padding) and
+has been seeded, unused, at first-run since Slice 8. `createCustomer`
+allocates it via `numberingService.allocateNext('customer', ...)` inside
+the same transaction as the insert and its audit row; `code` is
+immutable thereafter and structurally absent from `UpdateCustomerInput`.
+`contactDetails` is nullable, trimmed, blank-becomes-null — mirroring
+`suppliers.contactDetails`'s own precedent.
+
+**The key scope decision for this slice: credit limits belong in
+customer master data, but balances and credit enforcement do not.**
+`creditLimitMinor` is a nullable integer-minor-units field, stored and
+editable here — `null` means "no configured limit," explicitly not
+"unlimited credit," a distinction this slice leaves to the renderer and
+documentation to communicate rather than to any calculation. This slice
+computes no balance, no remaining credit, and enforces nothing against
+this value; outstanding-balance display and any credit-enforcement
+logic are both explicitly deferred (Slice 23, Accounts Receivable).
+`currencyId` exists as a column but every write pins it to
+`FUNCTIONAL_CURRENCY_ID`, mirroring `product_variants.currency_id` and
+`supplier_item_prices.currency_id`'s own precedent exactly — never
+accepted from the renderer, which has no currency selector at all.
+
+`paymentTermsDays` is a plain nullable integer — no payment-terms
+reference table was introduced, a genuinely new concept with no
+established pattern to mirror (distinct from Slice 4's `payment_methods`,
+which describes how payment is made, not when it's due). `null` means
+no default configured; `0` is a valid, meaningful value ("due
+immediately"), never treated as absent. Validated with the same strict,
+digits-only pattern used throughout this codebase for non-negative
+integers (rejecting `"5.5"`, `"-5"`, `"+5"`, `"abc"`) — confirmed
+directly that a looser `Number(value)` check would silently accept
+`"+5"` by stripping the sign, and fixed the renderer's own parser to
+use a dedicated `/^\d+$/`-based parser instead, matching
+`inventoryItemQuantity.ts`'s own established pattern, before any test
+was written against it.
+
+**`customer_contacts`** is a simple, non-append-only child list — unlike
+`supplier_item_prices`, this is ordinary reference data with its own
+lifecycle, using soft activation only (no hard delete anywhere in this
+codebase for any business record). `role`, `phone`, and `email` are all
+nullable, trimmed, blank-becomes-null, with no format validation on
+phone or email (no established convention exists anywhere in this
+codebase for either) and no requirement that at least one be present.
+Mutations (create/update/deactivate/reactivate) require the parent
+customer to be currently active; reads are never gated this way, so an
+inactive customer's contacts remain fully visible for historical
+reference. Deactivating a customer never cascades to its contacts.
+`UpdateCustomerContactInput` has no `customerId` field — a contact's
+parent is fixed at creation and can never be reassigned via update, a
+structural guarantee.
+
+Unlike Products/Inventory Items, **all four roles** — including Finance
+— receive both `customers.read` and `customers.manage`, mirroring
+Suppliers' own precedent. `customer_contacts` reuses these same two
+actions rather than introducing a separate pair. Every customer
+create/update/deactivate/reactivate, and every contact
+create/update/deactivate/reactivate, writes exactly one audit row in the
+same transaction as its business mutation; a no-op mutation writes none.
+`canViewCustomers`/`canManageCustomers` are cosmetic-only session flags,
+exactly like every prior `canView*`/`canManage*` pair — real enforcement
+is `requireAuthorizedCaller`, resolved fresh from SQLite on every call.
+
+`CustomerListScreen` includes client-side, case-insensitive search over
+code/name/contactDetails — a new UI pattern relative to Products/
+Inventory Items/Suppliers' own plain, unfiltered list screens, required
+by this slice's own acceptance criterion that ~500 customers be
+searchable without a noticeable delay.
+
+**Intentionally excluded from this slice:** customer-specific pricing (a
+later refinement); outstanding-balance display and any credit
+enforcement (Slice 23); any accounting posting; and any customer tax
+field, since none is named in the approved scope.
 
 ### First-run setup wizard
 

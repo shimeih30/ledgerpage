@@ -7,6 +7,8 @@ import { InventoryItemListScreen } from '../inventoryItems/InventoryItemListScre
 import { InventoryItemDetailScreen } from '../inventoryItems/InventoryItemDetailScreen'
 import { SupplierListScreen } from '../suppliers/SupplierListScreen'
 import { SupplierDetailScreen } from '../suppliers/SupplierDetailScreen'
+import { CustomerListScreen } from '../customers/CustomerListScreen'
+import { CustomerDetailScreen } from '../customers/CustomerDetailScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -15,7 +17,7 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items' | 'suppliers'
+type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items' | 'suppliers' | 'customers'
 
 /**
  * Local navigation within the Products area only — list/create/detail —
@@ -49,6 +51,14 @@ type SuppliersRoute =
   { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; supplierId: string }
 
 /**
+ * Same local-routing posture as ProductsRoute/InventoryItemsRoute/
+ * SuppliersRoute above — list/create/detail, no routing library, reset
+ * to 'list' whenever the nav link itself is clicked.
+ */
+type CustomersRoute =
+  { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; customerId: string }
+
+/**
  * The authenticated application area. The "Users & Roles" link is
  * rendered only when `session.isOwner` is true, and the "Audit Log"
  * link only when `session.canViewAuditLog` is true — both purely
@@ -66,6 +76,7 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
     screen: 'list'
   })
   const [suppliersRoute, setSuppliersRoute] = useState<SuppliersRoute>({ screen: 'list' })
+  const [customersRoute, setCustomersRoute] = useState<CustomersRoute>({ screen: 'list' })
 
   async function handleLogout(): Promise<void> {
     try {
@@ -202,6 +213,26 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Suppliers
             </button>
           )}
+          {session.canViewCustomers && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('customers')
+                setCustomersRoute({ screen: 'list' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'customers' ? 700 : 500
+              }}
+            >
+              Customers
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -292,6 +323,28 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
           canManageSuppliers={session.canManageSuppliers}
           onBack={() => setSuppliersRoute({ screen: 'list' })}
           onSaved={(supplierId) => setSuppliersRoute({ screen: 'detail', supplierId })}
+        />
+      )}
+      {view === 'customers' && customersRoute.screen === 'list' && (
+        <CustomerListScreen
+          canManageCustomers={session.canManageCustomers}
+          onOpenCustomer={(customerId) => setCustomersRoute({ screen: 'detail', customerId })}
+          onCreateCustomer={() => setCustomersRoute({ screen: 'create' })}
+        />
+      )}
+      {view === 'customers' && customersRoute.screen === 'create' && (
+        <CustomerDetailScreen
+          canManageCustomers={session.canManageCustomers}
+          onBack={() => setCustomersRoute({ screen: 'list' })}
+          onSaved={(customerId) => setCustomersRoute({ screen: 'detail', customerId })}
+        />
+      )}
+      {view === 'customers' && customersRoute.screen === 'detail' && (
+        <CustomerDetailScreen
+          customerId={customersRoute.customerId}
+          canManageCustomers={session.canManageCustomers}
+          onBack={() => setCustomersRoute({ screen: 'list' })}
+          onSaved={(customerId) => setCustomersRoute({ screen: 'detail', customerId })}
         />
       )}
       {view === 'home' && (
