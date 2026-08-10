@@ -23,7 +23,10 @@ export const ACTIONS = [
   'suppliers.read',
   'suppliers.manage',
   'customers.read',
-  'customers.manage'
+  'customers.manage',
+  'inventory_lots.read',
+  'inventory_lots.manage',
+  'inventory_lots.override'
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -99,6 +102,17 @@ export interface AuthPrincipal {
  * for customer_contacts — there is no separate action for contact
  * management, mirroring supplier_item_prices' own precedent.
  *
+ * Slice 15 (inventory_lots.read/inventory_lots.manage/
+ * inventory_lots.override): a three-tier matrix distinct from every
+ * prior domain — owner and executive receive all three; operations
+ * receives read/manage but NOT override (operations may not bypass the
+ * expired/quarantined-lot consumption guard); finance receives read
+ * only (unlike suppliers/customers, stock lots are physical-inventory
+ * mechanics, not financial master data finance directly manages).
+ * inventory_lots.override is deliberately its own action, separate from
+ * .manage, so a role can manage lots without being able to override the
+ * negative-stock/expiry/quarantine guards.
+ *
  * owner always receives every defined action, computed from ACTIONS
  * rather than hand-duplicated, so a newly added action is automatically
  * granted to owner without this file needing a matching edit.
@@ -116,7 +130,10 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'inventory_lots.manage',
+    'inventory_lots.override'
   ],
   operations: [
     'numbering.read',
@@ -127,7 +144,9 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'inventory_lots.manage'
   ],
   finance: [
     'company.read',
@@ -140,7 +159,8 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read'
   ]
 }
 

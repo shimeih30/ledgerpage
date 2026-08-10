@@ -915,6 +915,72 @@ and moves lots; it does not, by itself, create a journal entry
   path.
 - Reserving stock reduces "available" without reducing "physical."
 
+**Decisions approved for this slice (owner review, following the
+pre-implementation plan above).**
+
+1. **Status model correction from the original plan.** The plan above
+   lists `active`/`quarantined`/`expired`/`depleted` as the lot status
+   values; as implemented, only three values are ever _persisted_
+   (`active`/`quarantined`/`depleted`) — `expired` is instead _derived_
+   at read time from `expiryDate` vs. the current moment, never stored,
+   since whether a lot is expired right now is a function of the clock,
+   not a fact to persist and let go stale. The read-model surfaces both
+   `lifecycleStatus` (persisted) and `effectiveStatus` (persisted status,
+   with `expired` folded in) for exactly this reason.
+2. **Scaled-integer quantities.** `quantityScale = 10 ^
+unitOfMeasure.decimalPlaces`; every physical quantity is an integer
+   in that scale, never a float. Parsing a decimal string never
+   multiplies a float by the scale — confirmed directly that ordinary
+   IEEE 754 arithmetic does not round-trip exactly for many decimal
+   fractions, so `quantityScale.ts` extracts whole/fractional digit
+   strings via regex and concatenates them into a single integer
+   instead.
+3. **Numbering.** `internalLotNumber` uses a newly-approved
+   `inventory_lot` numbering rule (`LOT`, never-reset, 6-digit padding),
+   mirroring `customers.code`/`suppliers.code`'s own precedent exactly.
+4. **Authorization — a new three-tier matrix.** `inventory_lots.read`,
+   `inventory_lots.manage`, and `inventory_lots.override` as three
+   separate actions (distinct from every prior domain's two-action
+   read/manage pair), so a role can manage lots without being able to
+   bypass the expired/quarantined consumption guard. Owner/Executive:
+   all three. Operations: read/manage, explicitly **not** override.
+   Finance: **read only** — unlike Suppliers/Customers, stock lots are
+   physical-inventory mechanics, not financial master data Finance
+   directly manages.
+5. **Append-only, once-only reversal.** No update or delete path exists
+   anywhere for `stock_movements`; corrections are new movements
+   (adjustments or reversals), never edits. A movement can be reversed
+   once only, enforced by both an explicit service-layer check and the
+   database's own unique constraint on `reversed_movement_id`.
+6. **Cost allocation — exact integer arithmetic.** A lot's full
+   depletion consumes its entire `costRemainingMinor` exactly; a
+   partial draw uses `round(costRemainingMinor * drawn /
+remaining)` — one deliberate rounding step, confirmed by a dedicated
+   test to conserve cost exactly across multiple unequal partial draws
+   from the same lot, not only the trivial single-draw case.
+7. **This slice's own IPC/renderer surface is read-only, end to end.**
+   `createOpeningLot` and every mutation service
+   (`recordAdjustment`/`reserveStock`/`releaseReservation`/
+   `reverseMovement`/`consumeStock`/`setLotQuarantined`/`setLotActive`)
+   are service-layer-only in this slice, callable in-process by later
+   slices (Purchasing, Production, Sales) but exposed nowhere over IPC.
+   `registerInventoryLotHandlers.ts` registers exactly 5 read channels.
+8. **Renderer navigation is three screens deep**, not two as a naive
+   reading of "stock-on-hand view + lot detail" might suggest: a stock
+   summary row represents an item, potentially with several lots, so
+   `StockOnHandScreen` → `InventoryItemLotsScreen` (every lot for that
+   item, reader chooses) → `InventoryLotDetailScreen` — silently
+   auto-selecting a single lot when more than one exists was
+   considered and rejected as ambiguous.
+9. **Reconciliation is independently verified, not merely asserted.**
+   `stockLedgerReconciliation.test.ts` reconstructs every lot's cached
+   `quantityRemainingScaled`/`costRemainingMinor` directly from raw
+   `stock_movements` rows — never trusting `stockQuantityService`'s own
+   derived output — and proves the cached columns exactly equal
+   `SUM(physicalQuantityDeltaScaled)`/`SUM(costDeltaMinor)` across every
+   scenario (opening, partial/full/multi-lot consumption, adjustment,
+   reservation, release, reversal, and a combined 6-step lifecycle).
+
 ---
 
 ## Tier C — Accounting Foundations

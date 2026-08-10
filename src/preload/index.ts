@@ -158,6 +158,21 @@ import {
   type UpdateCustomerInput,
   type UpdateCustomerResult
 } from '../shared/ipc/customers'
+import {
+  INVENTORY_LOTS_GET_CHANNEL,
+  INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL,
+  INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL,
+  STOCK_GET_SUMMARY_CHANNEL,
+  STOCK_LIST_SUMMARIES_CHANNEL,
+  type GetInventoryLotResult,
+  type GetStockSummaryResult,
+  type InventoryLotIdInput,
+  type LedgerPageInventoryLotsApi,
+  type ListInventoryLotMovementsResult,
+  type ListInventoryLotsForItemResult,
+  type ListStockSummariesResult,
+  type StockItemIdInput
+} from '../shared/ipc/inventoryLots'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -200,7 +215,8 @@ const api: LedgerPageApi &
   LedgerPageProductsApi &
   LedgerPageInventoryItemsApi &
   LedgerPageSuppliersApi &
-  LedgerPageCustomersApi = {
+  LedgerPageCustomersApi &
+  LedgerPageInventoryLotsApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -381,7 +397,24 @@ const api: LedgerPageApi &
   reactivateCustomerContact: (
     input: CustomerContactIdInput
   ): Promise<MutateCustomerContactResult> =>
-    ipcRenderer.invoke(CUSTOMER_CONTACTS_REACTIVATE_CHANNEL, input)
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_REACTIVATE_CHANNEL, input),
+
+  listInventoryLotsForItem: (input: StockItemIdInput): Promise<ListInventoryLotsForItemResult> =>
+    ipcRenderer.invoke(INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL, input),
+
+  getInventoryLot: (input: InventoryLotIdInput): Promise<GetInventoryLotResult> =>
+    ipcRenderer.invoke(INVENTORY_LOTS_GET_CHANNEL, input),
+
+  listInventoryLotMovements: (
+    input: InventoryLotIdInput
+  ): Promise<ListInventoryLotMovementsResult> =>
+    ipcRenderer.invoke(INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL, input),
+
+  listStockSummaries: (): Promise<ListStockSummariesResult> =>
+    ipcRenderer.invoke(STOCK_LIST_SUMMARIES_CHANNEL),
+
+  getStockSummary: (input: StockItemIdInput): Promise<GetStockSummaryResult> =>
+    ipcRenderer.invoke(STOCK_GET_SUMMARY_CHANNEL, input)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

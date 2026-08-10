@@ -116,7 +116,12 @@ function installMockApi(overrides: MockApiOverrides = {}) {
     createCustomerContact: overrides.createCustomerContact ?? vi.fn(),
     updateCustomerContact: overrides.updateCustomerContact ?? vi.fn(),
     deactivateCustomerContact: overrides.deactivateCustomerContact ?? vi.fn(),
-    reactivateCustomerContact: overrides.reactivateCustomerContact ?? vi.fn()
+    reactivateCustomerContact: overrides.reactivateCustomerContact ?? vi.fn(),
+    listInventoryLotsForItem: vi.fn().mockResolvedValue({ success: true, lots: [] }),
+    getInventoryLot: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listInventoryLotMovements: vi.fn().mockResolvedValue({ success: true, movements: [] }),
+    listStockSummaries: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
+    getStockSummary: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' })
   }
   window.ledgerpage = api as unknown as typeof window.ledgerpage
   return api

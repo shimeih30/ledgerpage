@@ -7,11 +7,11 @@ import {
 } from '../../../src/main/db/numberingDefaults'
 
 describe('APPROVED_NUMBERING_DEFAULTS', () => {
-  it('contains exactly ten entries', () => {
-    expect(APPROVED_NUMBERING_DEFAULTS).toHaveLength(10)
+  it('contains exactly eleven entries', () => {
+    expect(APPROVED_NUMBERING_DEFAULTS).toHaveLength(11)
   })
 
-  it('matches the frozen specification exactly', () => {
+  it('matches the frozen specification exactly, plus inventory_lot approved for Slice 15', () => {
     expect(APPROVED_NUMBERING_DEFAULTS).toEqual([
       { documentTypeKey: 'quotation', prefix: 'QT', resetBehavior: 'yearly', paddingLength: 6 },
       { documentTypeKey: 'sales_order', prefix: 'SO', resetBehavior: 'yearly', paddingLength: 6 },
@@ -37,7 +37,13 @@ describe('APPROVED_NUMBERING_DEFAULTS', () => {
       },
       { documentTypeKey: 'customer', prefix: 'CUS', resetBehavior: 'never', paddingLength: 6 },
       { documentTypeKey: 'supplier', prefix: 'SUP', resetBehavior: 'never', paddingLength: 6 },
-      { documentTypeKey: 'product', prefix: 'PRD', resetBehavior: 'never', paddingLength: 6 }
+      { documentTypeKey: 'product', prefix: 'PRD', resetBehavior: 'never', paddingLength: 6 },
+      {
+        documentTypeKey: 'inventory_lot',
+        prefix: 'LOT',
+        resetBehavior: 'never',
+        paddingLength: 6
+      }
     ])
   })
 

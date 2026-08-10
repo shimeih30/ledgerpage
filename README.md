@@ -658,6 +658,153 @@ later refinement); outstanding-balance display and any credit
 enforcement (Slice 23); any accounting posting; and any customer tax
 field, since none is named in the approved scope.
 
+### Inventory lots & FIFO costing
+
+The fifth master-data-adjacent module, and the first to introduce a
+transactional ledger rather than simple reference data: `inventory_lots`
+(one row per physical receipt of stock) and `stock_movements` (an
+append-only history of every quantity/cost/reservation change against a
+lot). This is infrastructure for FIFO costing — it posts nothing to the
+accounting ledger on its own, since Accounting Foundations doesn't exist
+until Slices 16-17.
+
+**Scaled-integer quantity model.** Every physical quantity is stored as
+an integer, scaled by the inventory item's own base unit's
+`decimalPlaces` (`quantityScale = 10 ^ decimalPlaces`) — mirroring
+money's own integer-minor-units convention exactly, just with a
+per-unit scale instead of a fixed 2 decimal places. "1.500 kg" at 3
+decimal places is the integer `1500`; there is no floating-point
+physical-quantity storage anywhere in this codebase. Parsing a raw
+decimal string never uses `Number(value) * scale` — confirmed directly
+that ordinary IEEE 754 arithmetic does not round-trip exactly for many
+decimal fractions (e.g. `0.29 * 100 === 28.999999999999996`).
+`quantityScale.ts`'s own `parseQuantityToScaledInteger` instead extracts
+whole and fractional digit strings via a regex anchored to the unit's
+exact allowed decimal length, then concatenates and parses them as a
+single integer — exact digit-string arithmetic, never a floating-point
+multiplication.
+
+**Lots.** `internalLotNumber` is system-generated via the newly-approved
+`inventory_lot` numbering rule (`LOT`, never-reset, 6-digit padding),
+immutable thereafter. `currencyId` is always `FUNCTIONAL_CURRENCY_ID`,
+assigned server-side, mirroring every other money-bearing table's own
+precedent. `expiryDate` is required exactly when the parent item has
+`expiryTracked=true`, and rejected outright (not silently dropped) when
+provided but not applicable. `createOpeningLot` is service-layer-only in
+this slice — there is no IPC channel, preload method, or renderer UI
+that can create a lot; opening stock is established internally, for
+later slices (Purchasing, Production) to call in-process. Persisted
+`lifecycleStatus` is one of exactly three values: `active`,
+`quarantined`, `depleted`. A lot's _effective_ status additionally folds
+in `expired` — computed at read time from `expiryDate` vs. the current
+moment, never stored, since whether a lot is expired as of right now is
+a function of the clock, not a fact to persist and let go stale; no
+database row is ever updated merely because time passed.
+
+**Movements are append-only.** No update or delete path exists anywhere
+in this codebase for `stock_movements`, structurally as well as by
+convention — corrections are new movements (adjustments or reversals),
+never edits to a prior row. A movement's `reversedMovementId` links a
+reversal to the exact movement it undoes; a movement can be reversed
+**once only**, enforced both by an explicit service-layer pre-check and
+by the database's own unique constraint on `reversed_movement_id` as a
+second line of defense (SQLite treats every `NULL` as distinct from
+every other `NULL`, so non-reversal rows are unlimited while any one
+movement is still capped to a single reversal). A reversal applies the
+**exact negation** of the original movement's physical, reserved, and
+cost deltas.
+
+**Negative stock is never permitted** — physical quantity, reserved
+quantity, and available quantity (physical − reserved) can never go
+below zero, for any movement type, enforced at the service layer (the
+actual guard) and backed by the database's own CHECK constraints as a
+second line of defense. Reservations only ever increase `reserved`;
+they never alter physical quantity. Releases only ever decrease
+`reserved`; they never increase physical quantity. A reservation can
+never exceed a lot's currently-usable physical quantity (physical minus
+already-outstanding reservations on that lot).
+
+**Cached balances, transactionally maintained.** Each lot's own
+`quantityRemainingScaled`/`costRemainingMinor` columns are updated in
+the exact same database transaction as the movement row that changes
+them — there is no code path anywhere in this codebase that writes
+either cached field without inserting the corresponding movement in
+that same transaction. This is independently verified, not merely
+asserted: `stockLedgerReconciliation.test.ts` reconstructs every lot's
+balance directly from raw `stock_movements` rows (never trusting
+`stockQuantityService`'s own derived output) and proves the cached
+columns exactly equal the reconstruction:
+
+```
+quantityRemainingScaled = SUM(stock_movements.physicalQuantityDeltaScaled)
+costRemainingMinor      = SUM(stock_movements.costDeltaMinor)
+available               = physical - reserved
+```
+
+**FIFO consumption.** `fifoConsumptionService.ts` selects lots
+oldest-first by a fixed, deterministic order — `receivedDate ASC,
+createdAt ASC, id ASC` — skipping quarantined and expired lots unless an
+authorized override with a reason is supplied. Cost allocation uses
+exact integer arithmetic throughout: a lot's full depletion consumes its
+entire `costRemainingMinor` exactly (never a rounded proportional
+figure that could leave a stray remainder); a partial draw computes
+`round(costRemainingMinor * quantityDrawn / quantityRemainingScaled)` —
+one deliberate, singular currency-rounding step, confirmed by a
+dedicated test to conserve cost exactly across multiple unequal partial
+draws from the same lot, not only the trivial single-draw case. The
+worked acceptance example — 20.000 kg received at $3.50/kg, then 50.000
+kg at $4.20/kg, consuming 30.000 kg — draws 20.000 kg ($70.00) from the
+first lot and 10.000 kg ($42.00) from the second, totalling exactly
+**US$112.00**, verified byte-exact by its own test.
+
+**Authorization** introduces a three-tier matrix distinct from every
+prior domain: `inventory_lots.read`, `inventory_lots.manage`, and
+`inventory_lots.override` as three separate actions, so a role can
+manage lots without being able to bypass the expired/quarantined
+consumption guard. Owner and Executive receive all three. Operations
+receives read/manage but **not** override. Finance receives **read
+only** — unlike Suppliers/Customers, stock lots are physical-inventory
+mechanics, not financial master data Finance directly manages.
+Expired/quarantined-lot consumption requires both an authorized override
+role and a non-blank reason; this is enforced at the FIFO consumption
+service's own input validation, with the calling layer responsible for
+confirming the actor actually holds `inventory_lots.override` before
+ever constructing that input. `canViewInventoryLots`/
+`canManageInventoryLots`/`canOverrideInventoryLots` are cosmetic-only
+session flags, exactly like every prior `canView*`/`canManage*` pair.
+
+**IPC and renderer are entirely read-only in this slice.**
+`registerInventoryLotHandlers.ts` registers exactly 5 channels
+(`inventory-lots:list-for-item`, `inventory-lots:get`,
+`inventory-lots:list-movements`, `stock:list-summaries`,
+`stock:get-summary`), every one gated by `requireAuthorizedCaller`
+against `inventory_lots.read`, resolved fresh from SQLite on every call.
+No mutation channel, handler, preload method, or renderer-global method
+exists for `createOpeningLot`, `recordAdjustment`, `reserveStock`,
+`releaseReservation`, `reverseMovement`, `consumeStock`,
+`setLotQuarantined`, or `setLotActive` — confirmed structurally by
+dedicated tests at every layer (the shared contract's own runtime
+exports, the registered IPC channels, the built preload output, and the
+exposed renderer-global surface), not merely by omission.
+
+Renderer navigation is three screens deep: **`StockOnHandScreen`**
+(client-side, case-insensitive search over item code/name; a stock
+summary row represents an item, potentially with several lots) →
+**`InventoryItemLotsScreen`** (every lot for the selected item, in FIFO
+order, so the reader chooses which lot to open rather than the app
+silently guessing) → **`InventoryLotDetailScreen`** (full lot metadata,
+derived effective status, and its append-only movement history,
+preserving IPC order exactly). `incoming` is always zero in this slice —
+a stub for the field Slice 18 (Purchasing) will eventually populate,
+never derived from movements.
+
+**Intentionally excluded from this slice:** purchasing, manufacturing,
+and sales integration (goods receipts, production consumption, and
+sales fulfillment all remain internal-service-only until their own
+slices); any accounting posting; unit conversions; reorder-point
+calculations; and any stock mutation UI of any kind — this slice's own
+renderer and IPC surface is, by design, read-only from end to end.
+
 ### First-run setup wizard
 
 The M1 implementation plan describes Slice 8 as the point where the real

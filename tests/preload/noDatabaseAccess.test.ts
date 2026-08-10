@@ -98,7 +98,12 @@ describe('preload API surface after Slice 3', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -210,7 +215,12 @@ describe('preload API surface after Slice 4', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -311,7 +321,12 @@ describe('preload API surface after Slice 5', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -413,7 +428,12 @@ describe('preload API surface after Slice 6', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -527,7 +547,12 @@ describe('preload API surface after Slice 7', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -641,7 +666,12 @@ describe('preload API surface after Slice 8', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -752,7 +782,12 @@ describe('preload API surface after Slice 9', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -858,7 +893,12 @@ describe('preload API surface after Slice 10', () => {
         'createCustomerContact',
         'updateCustomerContact',
         'deactivateCustomerContact',
-        'reactivateCustomerContact'
+        'reactivateCustomerContact',
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
       ].sort()
     )
   })
@@ -920,5 +960,72 @@ describe('preload API surface after Slice 10', () => {
     for (const key of customerRelatedKeys) {
       expect(key.toLowerCase()).not.toContain('currency')
     }
+  })
+
+  /**
+   * Slice 15's own IPC surface is entirely read-only -- the approved
+   * architecture is "read-only stock renderer and IPC". No exposed
+   * method name anywhere in the API suggests any stock mutation:
+   * createOpeningLot, recordReceipt, recordAdjustment, reserveStock,
+   * releaseReservation, reverseMovement, consumeStock,
+   * setLotQuarantined, and setLotActive all remain internal-only,
+   * callable in-process by later slices, never exposed over IPC in
+   * this slice -- and no update/delete surface exists for either lots
+   * or movements.
+   */
+  it('exposes no stock/inventory-lot mutation method of any kind', async () => {
+    await import('../../src/preload/index')
+
+    const api = exposeInMainWorld.mock.calls[0][1] as Record<string, unknown>
+    const exposedKeys = Object.keys(api)
+
+    const explicitlyProhibited = [
+      'createOpeningLot',
+      'recordReceipt',
+      'recordAdjustment',
+      'reserveStock',
+      'releaseReservation',
+      'reverseMovement',
+      'consumeStock',
+      'setLotQuarantined',
+      'setLotActive',
+      'updateInventoryLot',
+      'deleteInventoryLot',
+      'updateStockMovement',
+      'deleteStockMovement',
+      'createStock',
+      'updateStock',
+      'deleteStock',
+      'adjustStock',
+      'mutateStock'
+    ]
+    for (const prohibited of explicitlyProhibited) {
+      expect(exposedKeys).not.toContain(prohibited)
+    }
+
+    // Every one of the 5 approved read-only methods must still be
+    // present -- confirming the check above isn't accidentally
+    // over-broad and silently passing because nothing stock-related
+    // was exposed at all.
+    const approvedReadOnly = [
+      'listInventoryLotsForItem',
+      'getInventoryLot',
+      'listInventoryLotMovements',
+      'listStockSummaries',
+      'getStockSummary'
+    ]
+    for (const approved of approvedReadOnly) {
+      expect(exposedKeys).toContain(approved)
+    }
+
+    // A broader, name-pattern sweep across every stock/lot-related key:
+    // none may look like a mutation, regardless of exact naming.
+    const stockRelatedKeys = exposedKeys.filter((key) => /stock|inventorylot/i.test(key))
+    for (const key of stockRelatedKeys) {
+      expect(key).not.toMatch(
+        /create|record|reserve|release|reverse|consume|quarantine|activate|update|delete|adjust|mutate/i
+      )
+    }
+    expect(stockRelatedKeys.sort()).toEqual(approvedReadOnly.sort())
   })
 })

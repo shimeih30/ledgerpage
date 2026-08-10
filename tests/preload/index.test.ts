@@ -69,7 +69,12 @@ const EXPECTED_KEYS = [
   'createCustomerContact',
   'updateCustomerContact',
   'deactivateCustomerContact',
-  'reactivateCustomerContact'
+  'reactivateCustomerContact',
+  'listInventoryLotsForItem',
+  'getInventoryLot',
+  'listInventoryLotMovements',
+  'listStockSummaries',
+  'getStockSummary'
 ]
 
 describe('preload API surface', () => {
@@ -547,5 +552,91 @@ describe('preload API surface', () => {
     await api.deactivateCustomerContact(input)
 
     expect(invoke).toHaveBeenCalledWith(CUSTOMER_CONTACTS_DEACTIVATE_CHANNEL, input)
+  })
+
+  it('listInventoryLotsForItem forwards its input to the inventory-lots:list-for-item channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL } =
+      await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: true, lots: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listInventoryLotsForItem: (input: unknown) => Promise<unknown>
+    }
+    const input = { inventoryItemId: 'inventory_item_1' }
+    const result = await api.listInventoryLotsForItem(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('getInventoryLot forwards its input to the inventory-lots:get channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_LOTS_GET_CHANNEL } = await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: false, errorCode: 'not_found' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      getInventoryLot: (input: unknown) => Promise<unknown>
+    }
+    const input = { lotId: 'inventory_lot_1' }
+    const result = await api.getInventoryLot(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_LOTS_GET_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('listInventoryLotMovements forwards its input to the inventory-lots:list-movements channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL } =
+      await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: true, movements: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listInventoryLotMovements: (input: unknown) => Promise<unknown>
+    }
+    const input = { lotId: 'inventory_lot_1' }
+    const result = await api.listInventoryLotMovements(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('listStockSummaries invokes exactly the stock:list-summaries channel, with no arguments, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { STOCK_LIST_SUMMARIES_CHANNEL } = await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: true, summaries: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listStockSummaries: () => Promise<unknown>
+    }
+    const result = await api.listStockSummaries()
+
+    expect(invoke).toHaveBeenCalledWith(STOCK_LIST_SUMMARIES_CHANNEL)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('getStockSummary forwards its input to the stock:get-summary channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { STOCK_GET_SUMMARY_CHANNEL } = await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: false, errorCode: 'not_found' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      getStockSummary: (input: unknown) => Promise<unknown>
+    }
+    const input = { inventoryItemId: 'inventory_item_1' }
+    const result = await api.getStockSummary(input)
+
+    expect(invoke).toHaveBeenCalledWith(STOCK_GET_SUMMARY_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
   })
 })

@@ -185,7 +185,12 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
           'createCustomerContact',
           'updateCustomerContact',
           'deactivateCustomerContact',
-          'reactivateCustomerContact'
+          'reactivateCustomerContact',
+          'listInventoryLotsForItem',
+          'getInventoryLot',
+          'listInventoryLotMovements',
+          'listStockSummaries',
+          'getStockSummary'
         ].sort()
       )
     })
@@ -194,6 +199,46 @@ describe('preload build output (sandbox-compatible CommonJS)', () => {
       expect(exposedApi).toBeDefined()
       await (exposedApi?.getAppInfo as () => Promise<unknown>)()
       expect(invokedChannel).toBe('app:get-info')
+    })
+
+    it('the built output exposes all 5 approved inventory-lot/stock read methods and none of the prohibited mutation names', () => {
+      expect(exposedApi).toBeDefined()
+      const exposedKeys = Object.keys(exposedApi ?? {})
+
+      const approvedReadOnly = [
+        'listInventoryLotsForItem',
+        'getInventoryLot',
+        'listInventoryLotMovements',
+        'listStockSummaries',
+        'getStockSummary'
+      ]
+      for (const approved of approvedReadOnly) {
+        expect(exposedKeys).toContain(approved)
+      }
+
+      const explicitlyProhibited = [
+        'createOpeningLot',
+        'recordReceipt',
+        'recordAdjustment',
+        'reserveStock',
+        'releaseReservation',
+        'reverseMovement',
+        'consumeStock',
+        'setLotQuarantined',
+        'setLotActive',
+        'updateInventoryLot',
+        'deleteInventoryLot',
+        'updateStockMovement',
+        'deleteStockMovement',
+        'createStock',
+        'updateStock',
+        'deleteStock',
+        'adjustStock',
+        'mutateStock'
+      ]
+      for (const prohibited of explicitlyProhibited) {
+        expect(exposedKeys).not.toContain(prohibited)
+      }
     })
   })
 })

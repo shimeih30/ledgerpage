@@ -69,7 +69,12 @@ function installMockApi(): void {
     createCustomerContact: vi.fn(),
     updateCustomerContact: vi.fn(),
     deactivateCustomerContact: vi.fn(),
-    reactivateCustomerContact: vi.fn()
+    reactivateCustomerContact: vi.fn(),
+    listInventoryLotsForItem: vi.fn().mockResolvedValue({ success: true, lots: [] }),
+    getInventoryLot: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listInventoryLotMovements: vi.fn().mockResolvedValue({ success: true, movements: [] }),
+    listStockSummaries: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
+    getStockSummary: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' })
   }
 }
 
@@ -86,6 +91,9 @@ function session(overrides: Partial<SafeSessionInfo>): SafeSessionInfo {
     canManageSuppliers: false,
     canViewCustomers: false,
     canManageCustomers: false,
+    canViewInventoryLots: false,
+    canManageInventoryLots: false,
+    canOverrideInventoryLots: false,
     ...overrides
   }
 }
@@ -727,6 +735,254 @@ describe('AuthenticatedShell navigation', () => {
 
       await user.click(screen.getByRole('button', { name: 'Back' }))
       expect(await screen.findByText('No customers yet.')).toBeDefined()
+    })
+  })
+
+  describe('Stock navigation', () => {
+    const seededSummary = {
+      inventoryItemId: 'inventory_item_1',
+      itemCode: 'FLOUR',
+      itemName: 'Flour',
+      unitCode: 'kg',
+      unitName: 'Kilogram',
+      decimalPlaces: 3,
+      physicalQuantityScaled: 20000,
+      reservedQuantityScaled: 0,
+      availableQuantityScaled: 20000,
+      incomingQuantityScaled: 0,
+      formattedPhysicalQuantity: '20.000',
+      formattedReservedQuantity: '0.000',
+      formattedAvailableQuantity: '20.000',
+      formattedIncomingQuantity: '0.000',
+      lotCount: 1
+    }
+    const seededLot = {
+      id: 'inventory_lot_1',
+      internalLotNumber: 'LOT-000001',
+      supplierLotNumber: null,
+      inventoryItemId: 'inventory_item_1',
+      itemCode: 'FLOUR',
+      itemName: 'Flour',
+      supplierId: null,
+      supplierCode: null,
+      supplierName: null,
+      receivedDate: Date.now(),
+      quantityReceivedScaled: 20000,
+      quantityRemainingScaled: 20000,
+      formattedQuantityReceived: '20.000',
+      formattedQuantityRemaining: '20.000',
+      unitCode: 'kg',
+      unitName: 'Kilogram',
+      decimalPlaces: 3,
+      unitCostMinor: 350,
+      totalCostMinor: 7000,
+      costRemainingMinor: 7000,
+      currencyId: 'currency_usd',
+      expiryDate: null,
+      lifecycleStatus: 'active',
+      effectiveStatus: 'active',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+
+    function seedStockMocks(): void {
+      window.ledgerpage.listStockSummaries = vi
+        .fn()
+        .mockResolvedValue({ success: true, summaries: [seededSummary] })
+      window.ledgerpage.listInventoryLotsForItem = vi
+        .fn()
+        .mockResolvedValue({ success: true, lots: [seededLot] })
+      window.ledgerpage.getInventoryLot = vi
+        .fn()
+        .mockResolvedValue({ success: true, lot: seededLot })
+      window.ledgerpage.listInventoryLotMovements = vi
+        .fn()
+        .mockResolvedValue({ success: true, movements: [] })
+    }
+
+    it('shows the Stock link only when canViewInventoryLots is true', () => {
+      installMockApi()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      expect(screen.getByRole('button', { name: 'Stock' })).toBeDefined()
+    })
+
+    it('hides the Stock link when canViewInventoryLots is false', () => {
+      installMockApi()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: false })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      expect(screen.queryByRole('button', { name: 'Stock' })).toBeNull()
+    })
+
+    it('clicking Stock navigates to the stock-on-hand list', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      expect(await screen.findByText('No stock on hand yet.')).toBeDefined()
+    })
+
+    it('opening a summary row navigates to that item\u2019s lot list (item-lots), not directly to a lot', async () => {
+      installMockApi()
+      seedStockMocks()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      await user.click(await screen.findByRole('button', { name: 'View lots' }))
+
+      expect(await screen.findByRole('heading', { name: /FLOUR.*Flour/ })).toBeDefined()
+      expect(screen.getByText('LOT-000001')).toBeDefined()
+    })
+
+    it('opening a lot from item-lots navigates to lot detail', async () => {
+      installMockApi()
+      seedStockMocks()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      await user.click(await screen.findByRole('button', { name: 'View lots' }))
+      await user.click(await screen.findByRole('button', { name: 'View' }))
+
+      expect(await screen.findByRole('heading', { name: 'LOT-000001' })).toBeDefined()
+    })
+
+    it('Back from lot detail returns to the same item-lots screen (preserving item context)', async () => {
+      installMockApi()
+      seedStockMocks()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      await user.click(await screen.findByRole('button', { name: 'View lots' }))
+      await user.click(await screen.findByRole('button', { name: 'View' }))
+      await screen.findByRole('heading', { name: 'LOT-000001' })
+
+      await user.click(screen.getByRole('button', { name: 'Back' }))
+      expect(await screen.findByRole('heading', { name: /FLOUR.*Flour/ })).toBeDefined()
+    })
+
+    it('Back from item-lots returns to the Stock list', async () => {
+      installMockApi()
+      seedStockMocks()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      await user.click(await screen.findByRole('button', { name: 'View lots' }))
+      await screen.findByRole('heading', { name: /FLOUR.*Flour/ })
+
+      await user.click(screen.getByRole('button', { name: 'Back' }))
+      expect(await screen.findByText('FLOUR')).toBeDefined()
+      expect(await screen.findByRole('button', { name: 'View lots' })).toBeDefined()
+    })
+
+    it('multiple lots do not cause an arbitrary lot to be selected -- item-lots shows all of them for the reader to choose', async () => {
+      installMockApi()
+      const secondLot = {
+        ...seededLot,
+        id: 'inventory_lot_2',
+        internalLotNumber: 'LOT-000002'
+      }
+      window.ledgerpage.listStockSummaries = vi
+        .fn()
+        .mockResolvedValue({ success: true, summaries: [seededSummary] })
+      window.ledgerpage.listInventoryLotsForItem = vi
+        .fn()
+        .mockResolvedValue({ success: true, lots: [seededLot, secondLot] })
+
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      await user.click(await screen.findByRole('button', { name: 'View lots' }))
+
+      // Both lots are shown -- neither was silently auto-opened.
+      expect(await screen.findByText('LOT-000001')).toBeDefined()
+      expect(screen.getByText('LOT-000002')).toBeDefined()
+    })
+
+    it('Finance (view only, per the approved matrix) can view Stock', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({
+            canViewInventoryLots: true,
+            canManageInventoryLots: false,
+            canOverrideInventoryLots: false
+          })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      expect(await screen.findByText('No stock on hand yet.')).toBeDefined()
+    })
+
+    it('Operations (manage, no override, per the approved matrix) can view Stock', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: false
+          })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      expect(await screen.findByText('No stock on hand yet.')).toBeDefined()
+    })
+
+    it('no create/edit route exists for Stock -- no such button ever renders', async () => {
+      installMockApi()
+      const user = userEvent.setup()
+      render(
+        <AuthenticatedShell
+          session={session({ canViewInventoryLots: true, canManageInventoryLots: true })}
+          onLoggedOut={vi.fn()}
+        />
+      )
+      await user.click(screen.getByRole('button', { name: 'Stock' }))
+      await screen.findByText('No stock on hand yet.')
+      expect(screen.queryByRole('button', { name: /new/i })).toBeNull()
+      expect(screen.queryByRole('button', { name: /create/i })).toBeNull()
     })
   })
 })

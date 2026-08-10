@@ -93,6 +93,23 @@ export interface SafeSessionInfo {
    * Suppliers' own precedent.
    */
   canManageCustomers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Stock nav link / read-only view. Real enforcement is
+   * inventory-lots:* and stock:*'s own
+   * requireAuthorizedCaller('inventory_lots.read') checks.
+   */
+  canViewInventoryLots: boolean
+  /**
+   * Cosmetic only. Owner, Executive, and Operations receive
+   * inventory_lots.manage; Finance does not.
+   */
+  canManageInventoryLots: boolean
+  /**
+   * Cosmetic only. Only Owner and Executive receive
+   * inventory_lots.override.
+   */
+  canOverrideInventoryLots: boolean
 }
 
 export type LoginResult = { success: true; session: SafeSessionInfo } | { success: false }
@@ -118,6 +135,9 @@ export type SessionState =
       canManageSuppliers: boolean
       canViewCustomers: boolean
       canManageCustomers: boolean
+      canViewInventoryLots: boolean
+      canManageInventoryLots: boolean
+      canOverrideInventoryLots: boolean
     }
 
 export interface UnlockInput {

@@ -35,6 +35,7 @@
  */
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -835,4 +836,181 @@ export const customerContacts = sqliteTable(
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
   },
   (t) => [index('customer_contacts_customer_idx').on(t.customerId)]
+)
+
+/**
+ * Slice 15: the FIFO costing engine's own data — infrastructure/
+ * mechanism, not a financial transaction; this table posts nothing to
+ * the ledger on its own (Accounting Foundations doesn't exist until
+ * Slices 16-17). Approved architecture: scaled-integer physical
+ * quantities, transactionally maintained lot balances, FIFO cost
+ * allocation, no negative stock under any circumstances.
+ *
+ * quantity_received_scaled / quantity_remaining_scaled are integers
+ * scaled by the item's own base unit's decimalPlaces
+ * (quantityScale = 10 ^ decimalPlaces, see quantityScale.ts) — e.g.
+ * "1.500 kg" at 3 decimal places is stored as the integer 1500,
+ * mirroring money's own integer-minor-units convention exactly.
+ * total_cost_minor / cost_remaining_minor are the lot's total and
+ * still-unconsumed cost in integer minor currency units; cost is
+ * allocated out of cost_remaining_minor proportionally as the lot is
+ * consumed (see fifoConsumptionService.ts), never via floating-point
+ * arithmetic. currency_id is always FUNCTIONAL_CURRENCY_ID, assigned
+ * server-side, mirroring every other money-bearing table's own
+ * precedent exactly.
+ *
+ * internal_lot_number is system-generated via the newly-approved
+ * `inventory_lot` numbering rule (LOT, never-reset, 6-digit padding)
+ * and is immutable thereafter, mirroring customers.code/suppliers.code.
+ *
+ * lifecycle_status is a coarse, explicitly-set status (active /
+ * quarantined / depleted) distinct from a lot's *derived* effective
+ * status (which also accounts for expiry) — the derived status is
+ * computed at the read-model layer, never stored, since "is this lot
+ * expired as of right now" is a function of the current date, not a
+ * fact to persist and let go stale.
+ */
+export const INVENTORY_LOT_LIFECYCLE_STATUSES = ['active', 'quarantined', 'depleted'] as const
+
+export const inventoryLots = sqliteTable(
+  'inventory_lots',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    inventoryItemId: text('inventory_item_id')
+      .notNull()
+      .references(() => inventoryItems.id),
+    supplierId: text('supplier_id').references(() => suppliers.id),
+    receivedDate: integer('received_date', { mode: 'timestamp_ms' }).notNull(),
+    quantityReceivedScaled: integer('quantity_received_scaled').notNull(),
+    quantityRemainingScaled: integer('quantity_remaining_scaled').notNull(),
+    unitCostMinor: integer('unit_cost_minor').notNull(),
+    totalCostMinor: integer('total_cost_minor').notNull(),
+    costRemainingMinor: integer('cost_remaining_minor').notNull(),
+    currencyId: text('currency_id')
+      .notNull()
+      .references(() => currencies.id),
+    supplierLotNumber: text('supplier_lot_number'),
+    internalLotNumber: text('internal_lot_number').notNull(),
+    expiryDate: integer('expiry_date', { mode: 'timestamp_ms' }),
+    lifecycleStatus: text('lifecycle_status').notNull().default('active'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('inventory_lots_company_internal_lot_number_unique').on(
+      t.companyId,
+      t.internalLotNumber
+    ),
+    check('inventory_lots_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`),
+    check('inventory_lots_quantity_received_positive', sql`${t.quantityReceivedScaled} > 0`),
+    check('inventory_lots_quantity_remaining_non_negative', sql`${t.quantityRemainingScaled} >= 0`),
+    check(
+      'inventory_lots_quantity_remaining_lte_received',
+      sql`${t.quantityRemainingScaled} <= ${t.quantityReceivedScaled}`
+    ),
+    check('inventory_lots_unit_cost_non_negative', sql`${t.unitCostMinor} >= 0`),
+    check('inventory_lots_total_cost_non_negative', sql`${t.totalCostMinor} >= 0`),
+    check('inventory_lots_cost_remaining_non_negative', sql`${t.costRemainingMinor} >= 0`),
+    check(
+      'inventory_lots_cost_remaining_lte_total',
+      sql`${t.costRemainingMinor} <= ${t.totalCostMinor}`
+    ),
+    check(
+      'inventory_lots_lifecycle_status_valid',
+      sql`${t.lifecycleStatus} IN ('active','quarantined','depleted')`
+    )
+  ]
+)
+
+/**
+ * Append-only: no update or delete path exists anywhere in this
+ * codebase for this table, structurally as well as by convention —
+ * matching supplier_item_prices' own precedent exactly. Corrections
+ * are new movements (adjustments or reversals), never edits to a prior
+ * row. physical_quantity_delta_scaled / reserved_quantity_delta_scaled
+ * are signed scaled-integer deltas; cost_delta_minor is the
+ * corresponding signed cost movement. A movement affects at least one
+ * of the two quantity deltas (the "reservation"/"release" types affect
+ * only reserved; "receipt"/"consumption"/"adjustment" affect only
+ * physical; a CHECK below requires at least one to be nonzero).
+ *
+ * reference_type/reference_id together describe what caused this
+ * movement — reference_id has no real foreign key, since the tables
+ * Slices 18/21/22 will introduce (goods receipts, production batches,
+ * sales) don't exist yet; reference_type is constrained to a fixed,
+ * forward-looking enum instead.
+ *
+ * reversed_movement_id is only set on a movement that is itself a
+ * reversal of an earlier one — a real self-referencing foreign key,
+ * with a unique constraint ensuring a given movement can be reversed at
+ * most once (SQLite unique constraints treat every NULL as distinct
+ * from every other NULL, so this naturally allows unlimited
+ * non-reversal rows while still capping any one movement to a single
+ * reversal).
+ */
+export const STOCK_MOVEMENT_TYPES = [
+  'receipt',
+  'consumption',
+  'adjustment',
+  'reservation',
+  'release',
+  'reversal'
+] as const
+
+export const STOCK_MOVEMENT_REFERENCE_TYPES = [
+  'opening_stock',
+  'manual_adjustment',
+  'goods_receipt',
+  'production',
+  'sales',
+  'reservation',
+  'reversal'
+] as const
+
+export const stockMovements = sqliteTable(
+  'stock_movements',
+  {
+    id: text('id').primaryKey(),
+    companyId: text('company_id')
+      .notNull()
+      .references(() => company.id),
+    inventoryLotId: text('inventory_lot_id')
+      .notNull()
+      .references(() => inventoryLots.id),
+    movementType: text('movement_type').notNull(),
+    physicalQuantityDeltaScaled: integer('physical_quantity_delta_scaled').notNull().default(0),
+    reservedQuantityDeltaScaled: integer('reserved_quantity_delta_scaled').notNull().default(0),
+    costDeltaMinor: integer('cost_delta_minor').notNull().default(0),
+    referenceType: text('reference_type').notNull(),
+    referenceId: text('reference_id'),
+    reversedMovementId: text('reversed_movement_id'),
+    reason: text('reason'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
+  },
+  (t) => [
+    unique('stock_movements_reversed_movement_id_unique').on(t.reversedMovementId),
+    check('stock_movements_company_is_singleton', sql`${t.companyId} = ${primaryCompanyIdLiteral}`),
+    check(
+      'stock_movements_movement_type_valid',
+      sql`${t.movementType} IN ('receipt','consumption','adjustment','reservation','release','reversal')`
+    ),
+    check(
+      'stock_movements_reference_type_valid',
+      sql`${t.referenceType} IN ('opening_stock','manual_adjustment','goods_receipt','production','sales','reservation','reversal')`
+    ),
+    check(
+      'stock_movements_nonzero_delta',
+      sql`${t.physicalQuantityDeltaScaled} != 0 OR ${t.reservedQuantityDeltaScaled} != 0`
+    ),
+    foreignKey({
+      columns: [t.reversedMovementId],
+      foreignColumns: [t.id]
+    }),
+    index('stock_movements_lot_history_idx').on(t.inventoryLotId, t.createdAt),
+    index('stock_movements_reference_idx').on(t.referenceType, t.referenceId),
+    index('stock_movements_reversal_idx').on(t.reversedMovementId)
+  ]
 )

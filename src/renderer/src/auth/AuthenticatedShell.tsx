@@ -9,6 +9,9 @@ import { SupplierListScreen } from '../suppliers/SupplierListScreen'
 import { SupplierDetailScreen } from '../suppliers/SupplierDetailScreen'
 import { CustomerListScreen } from '../customers/CustomerListScreen'
 import { CustomerDetailScreen } from '../customers/CustomerDetailScreen'
+import { StockOnHandScreen } from '../inventory/StockOnHandScreen'
+import { InventoryItemLotsScreen } from '../inventory/InventoryItemLotsScreen'
+import { InventoryLotDetailScreen } from '../inventory/InventoryLotDetailScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -17,7 +20,8 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items' | 'suppliers' | 'customers'
+type View =
+  'home' | 'users' | 'audit' | 'products' | 'inventory-items' | 'suppliers' | 'customers' | 'stock'
 
 /**
  * Local navigation within the Products area only — list/create/detail —
@@ -59,6 +63,16 @@ type CustomersRoute =
   { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; customerId: string }
 
 /**
+ * Same local-routing posture as the other routes above, but with no
+ * 'create' screen at all — this slice's own approved architecture is
+ * entirely read-only, so there is no create/edit route for stock.
+ */
+type StockRoute =
+  | { screen: 'list' }
+  | { screen: 'item-lots'; inventoryItemId: string; itemCode: string; itemName: string }
+  | { screen: 'lot-detail'; lotId: string }
+
+/**
  * The authenticated application area. The "Users & Roles" link is
  * rendered only when `session.isOwner` is true, and the "Audit Log"
  * link only when `session.canViewAuditLog` is true — both purely
@@ -77,6 +91,19 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
   })
   const [suppliersRoute, setSuppliersRoute] = useState<SuppliersRoute>({ screen: 'list' })
   const [customersRoute, setCustomersRoute] = useState<CustomersRoute>({ screen: 'list' })
+  const [stockRoute, setStockRoute] = useState<StockRoute>({ screen: 'list' })
+  /**
+   * Tracks which item-lots screen a lot-detail view was opened from,
+   * so Back from lot detail returns to that same item's lot list
+   * (preserving the selected item context) rather than jumping all
+   * the way back to the top-level Stock list. The lot-detail route
+   * itself only carries a lotId, not the originating item, so this is
+   * tracked separately -- a small, local breadcrumb, not a routing
+   * library.
+   */
+  const [lastItemLotsContext, setLastItemLotsContext] = useState<
+    { inventoryItemId: string; itemCode: string; itemName: string } | undefined
+  >(undefined)
 
   async function handleLogout(): Promise<void> {
     try {
@@ -233,6 +260,26 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Customers
             </button>
           )}
+          {session.canViewInventoryLots && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('stock')
+                setStockRoute({ screen: 'list' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'stock' ? 700 : 500
+              }}
+            >
+              Stock
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -345,6 +392,41 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
           canManageCustomers={session.canManageCustomers}
           onBack={() => setCustomersRoute({ screen: 'list' })}
           onSaved={(customerId) => setCustomersRoute({ screen: 'detail', customerId })}
+        />
+      )}
+      {view === 'stock' && stockRoute.screen === 'list' && (
+        <StockOnHandScreen
+          onOpenItemLots={(inventoryItemId, itemCode, itemName) =>
+            setStockRoute({ screen: 'item-lots', inventoryItemId, itemCode, itemName })
+          }
+        />
+      )}
+      {view === 'stock' && stockRoute.screen === 'item-lots' && (
+        <InventoryItemLotsScreen
+          inventoryItemId={stockRoute.inventoryItemId}
+          itemCode={stockRoute.itemCode}
+          itemName={stockRoute.itemName}
+          onBack={() => setStockRoute({ screen: 'list' })}
+          onOpenLot={(lotId) => {
+            setLastItemLotsContext({
+              inventoryItemId: stockRoute.inventoryItemId,
+              itemCode: stockRoute.itemCode,
+              itemName: stockRoute.itemName
+            })
+            setStockRoute({ screen: 'lot-detail', lotId })
+          }}
+        />
+      )}
+      {view === 'stock' && stockRoute.screen === 'lot-detail' && (
+        <InventoryLotDetailScreen
+          lotId={stockRoute.lotId}
+          onBack={() =>
+            setStockRoute(
+              lastItemLotsContext
+                ? { screen: 'item-lots', ...lastItemLotsContext }
+                : { screen: 'list' }
+            )
+          }
         />
       )}
       {view === 'home' && (

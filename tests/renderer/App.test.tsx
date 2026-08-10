@@ -78,7 +78,12 @@ function installMockApi(
     createCustomerContact: vi.fn(),
     updateCustomerContact: vi.fn(),
     deactivateCustomerContact: vi.fn(),
-    reactivateCustomerContact: vi.fn()
+    reactivateCustomerContact: vi.fn(),
+    listInventoryLotsForItem: vi.fn().mockResolvedValue({ success: true, lots: [] }),
+    getInventoryLot: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listInventoryLotMovements: vi.fn().mockResolvedValue({ success: true, movements: [] }),
+    listStockSummaries: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
+    getStockSummary: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' })
   }
 }
 
@@ -129,7 +134,10 @@ describe('App', () => {
           canViewSuppliers: true,
           canManageSuppliers: true,
           canViewCustomers: true,
-          canManageCustomers: true
+          canManageCustomers: true,
+          canViewInventoryLots: true,
+          canManageInventoryLots: true,
+          canOverrideInventoryLots: true
         })
     )
     render(<App />)
