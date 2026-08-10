@@ -93,6 +93,42 @@ export interface SafeSessionInfo {
    * Suppliers' own precedent.
    */
   canManageCustomers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Stock nav link / read-only view. Real enforcement is
+   * inventory-lots:* and stock:*'s own
+   * requireAuthorizedCaller('inventory_lots.read') checks.
+   */
+  canViewInventoryLots: boolean
+  /**
+   * Cosmetic only. Owner, Executive, and Operations receive
+   * inventory_lots.manage; Finance does not.
+   */
+  canManageInventoryLots: boolean
+  /**
+   * Cosmetic only. Only Owner and Executive receive
+   * inventory_lots.override.
+   */
+  canOverrideInventoryLots: boolean
+  /**
+   * Cosmetic only. Owner, Executive, and Finance receive accounts.read;
+   * Operations does not.
+   */
+  canViewAccounts: boolean
+  /**
+   * Cosmetic only. Only Owner and Finance receive accounts.manage.
+   */
+  canManageAccounts: boolean
+  /**
+   * Cosmetic only, mirroring canViewAccounts. Owner, Executive, and
+   * Finance receive journal_entries.read; Operations does not.
+   */
+  canViewJournalEntries: boolean
+  /**
+   * Cosmetic only. Only Owner and Finance receive
+   * journal_entries.manage.
+   */
+  canManageJournalEntries: boolean
 }
 
 export type LoginResult = { success: true; session: SafeSessionInfo } | { success: false }
@@ -118,6 +154,13 @@ export type SessionState =
       canManageSuppliers: boolean
       canViewCustomers: boolean
       canManageCustomers: boolean
+      canViewInventoryLots: boolean
+      canManageInventoryLots: boolean
+      canOverrideInventoryLots: boolean
+      canViewAccounts: boolean
+      canManageAccounts: boolean
+      canViewJournalEntries: boolean
+      canManageJournalEntries: boolean
     }
 
 export interface UnlockInput {

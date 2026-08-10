@@ -7,11 +7,11 @@ import {
 } from '../../../src/main/db/numberingDefaults'
 
 describe('APPROVED_NUMBERING_DEFAULTS', () => {
-  it('contains exactly ten entries', () => {
-    expect(APPROVED_NUMBERING_DEFAULTS).toHaveLength(10)
+  it('contains exactly twelve entries', () => {
+    expect(APPROVED_NUMBERING_DEFAULTS).toHaveLength(12)
   })
 
-  it('matches the frozen specification exactly', () => {
+  it('matches the frozen specification exactly, plus journal_entry approved for Slice 16', () => {
     expect(APPROVED_NUMBERING_DEFAULTS).toEqual([
       { documentTypeKey: 'quotation', prefix: 'QT', resetBehavior: 'yearly', paddingLength: 6 },
       { documentTypeKey: 'sales_order', prefix: 'SO', resetBehavior: 'yearly', paddingLength: 6 },
@@ -37,7 +37,19 @@ describe('APPROVED_NUMBERING_DEFAULTS', () => {
       },
       { documentTypeKey: 'customer', prefix: 'CUS', resetBehavior: 'never', paddingLength: 6 },
       { documentTypeKey: 'supplier', prefix: 'SUP', resetBehavior: 'never', paddingLength: 6 },
-      { documentTypeKey: 'product', prefix: 'PRD', resetBehavior: 'never', paddingLength: 6 }
+      { documentTypeKey: 'product', prefix: 'PRD', resetBehavior: 'never', paddingLength: 6 },
+      {
+        documentTypeKey: 'inventory_lot',
+        prefix: 'LOT',
+        resetBehavior: 'never',
+        paddingLength: 6
+      },
+      {
+        documentTypeKey: 'journal_entry',
+        prefix: 'JE',
+        resetBehavior: 'yearly',
+        paddingLength: 6
+      }
     ])
   })
 
@@ -61,7 +73,7 @@ describe('isApprovedDocumentTypeKey', () => {
 
   it('rejects an unapproved key', () => {
     expect(isApprovedDocumentTypeKey('expense')).toBe(false)
-    expect(isApprovedDocumentTypeKey('journal_entry')).toBe(false)
+    expect(isApprovedDocumentTypeKey('production_order')).toBe(false)
     expect(isApprovedDocumentTypeKey('')).toBe(false)
   })
 })

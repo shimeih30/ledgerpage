@@ -158,6 +158,48 @@ import {
   type UpdateCustomerInput,
   type UpdateCustomerResult
 } from '../shared/ipc/customers'
+import {
+  INVENTORY_LOTS_GET_CHANNEL,
+  INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL,
+  INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL,
+  STOCK_GET_SUMMARY_CHANNEL,
+  STOCK_LIST_SUMMARIES_CHANNEL,
+  type GetInventoryLotResult,
+  type GetStockSummaryResult,
+  type InventoryLotIdInput,
+  type LedgerPageInventoryLotsApi,
+  type ListInventoryLotMovementsResult,
+  type ListInventoryLotsForItemResult,
+  type ListStockSummariesResult,
+  type StockItemIdInput
+} from '../shared/ipc/inventoryLots'
+import {
+  ACCOUNTS_CREATE_CHANNEL,
+  ACCOUNTS_DEACTIVATE_CHANNEL,
+  ACCOUNTS_GET_CHANNEL,
+  ACCOUNTS_LIST_CHANNEL,
+  ACCOUNTS_REACTIVATE_CHANNEL,
+  ACCOUNTS_UPDATE_CHANNEL,
+  JOURNAL_ENTRIES_CREATE_CHANNEL,
+  JOURNAL_ENTRIES_GET_CHANNEL,
+  JOURNAL_ENTRIES_LIST_CHANNEL,
+  JOURNAL_ENTRIES_REVERSE_CHANNEL,
+  TRIAL_BALANCE_GET_CHANNEL,
+  type AccountIdInput,
+  type CreateAccountRendererInput,
+  type CreateJournalEntryRendererInput,
+  type GetAccountResult,
+  type GetJournalEntryResult,
+  type GetTrialBalanceResult,
+  type JournalEntryIdInput,
+  type LedgerPageAccountingApi,
+  type ListAccountsResult,
+  type ListJournalEntriesResult,
+  type MutateAccountResult,
+  type MutateJournalEntryResult,
+  type ReverseJournalEntryRendererInput,
+  type UpdateAccountRendererInput
+} from '../shared/ipc/accounting'
 
 /**
  * The entire renderer-facing API for LedgerPage.
@@ -200,7 +242,9 @@ const api: LedgerPageApi &
   LedgerPageProductsApi &
   LedgerPageInventoryItemsApi &
   LedgerPageSuppliersApi &
-  LedgerPageCustomersApi = {
+  LedgerPageCustomersApi &
+  LedgerPageInventoryLotsApi &
+  LedgerPageAccountingApi = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke(APP_INFO_CHANNEL),
 
   getFirstRunStatus: (): Promise<FirstRunStatus> => ipcRenderer.invoke(SETUP_GET_STATUS_CHANNEL),
@@ -381,7 +425,58 @@ const api: LedgerPageApi &
   reactivateCustomerContact: (
     input: CustomerContactIdInput
   ): Promise<MutateCustomerContactResult> =>
-    ipcRenderer.invoke(CUSTOMER_CONTACTS_REACTIVATE_CHANNEL, input)
+    ipcRenderer.invoke(CUSTOMER_CONTACTS_REACTIVATE_CHANNEL, input),
+
+  listInventoryLotsForItem: (input: StockItemIdInput): Promise<ListInventoryLotsForItemResult> =>
+    ipcRenderer.invoke(INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL, input),
+
+  getInventoryLot: (input: InventoryLotIdInput): Promise<GetInventoryLotResult> =>
+    ipcRenderer.invoke(INVENTORY_LOTS_GET_CHANNEL, input),
+
+  listInventoryLotMovements: (
+    input: InventoryLotIdInput
+  ): Promise<ListInventoryLotMovementsResult> =>
+    ipcRenderer.invoke(INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL, input),
+
+  listStockSummaries: (): Promise<ListStockSummariesResult> =>
+    ipcRenderer.invoke(STOCK_LIST_SUMMARIES_CHANNEL),
+
+  getStockSummary: (input: StockItemIdInput): Promise<GetStockSummaryResult> =>
+    ipcRenderer.invoke(STOCK_GET_SUMMARY_CHANNEL, input),
+
+  listAccounts: (): Promise<ListAccountsResult> => ipcRenderer.invoke(ACCOUNTS_LIST_CHANNEL),
+
+  getAccount: (input: AccountIdInput): Promise<GetAccountResult> =>
+    ipcRenderer.invoke(ACCOUNTS_GET_CHANNEL, input),
+
+  createAccount: (input: CreateAccountRendererInput): Promise<MutateAccountResult> =>
+    ipcRenderer.invoke(ACCOUNTS_CREATE_CHANNEL, input),
+
+  updateAccount: (input: UpdateAccountRendererInput): Promise<MutateAccountResult> =>
+    ipcRenderer.invoke(ACCOUNTS_UPDATE_CHANNEL, input),
+
+  deactivateAccount: (input: AccountIdInput): Promise<MutateAccountResult> =>
+    ipcRenderer.invoke(ACCOUNTS_DEACTIVATE_CHANNEL, input),
+
+  reactivateAccount: (input: AccountIdInput): Promise<MutateAccountResult> =>
+    ipcRenderer.invoke(ACCOUNTS_REACTIVATE_CHANNEL, input),
+
+  listJournalEntries: (): Promise<ListJournalEntriesResult> =>
+    ipcRenderer.invoke(JOURNAL_ENTRIES_LIST_CHANNEL),
+
+  getJournalEntry: (input: JournalEntryIdInput): Promise<GetJournalEntryResult> =>
+    ipcRenderer.invoke(JOURNAL_ENTRIES_GET_CHANNEL, input),
+
+  createJournalEntry: (input: CreateJournalEntryRendererInput): Promise<MutateJournalEntryResult> =>
+    ipcRenderer.invoke(JOURNAL_ENTRIES_CREATE_CHANNEL, input),
+
+  reverseJournalEntry: (
+    input: ReverseJournalEntryRendererInput
+  ): Promise<MutateJournalEntryResult> =>
+    ipcRenderer.invoke(JOURNAL_ENTRIES_REVERSE_CHANNEL, input),
+
+  getTrialBalance: (): Promise<GetTrialBalanceResult> =>
+    ipcRenderer.invoke(TRIAL_BALANCE_GET_CHANNEL)
 }
 
 contextBridge.exposeInMainWorld('ledgerpage', api)

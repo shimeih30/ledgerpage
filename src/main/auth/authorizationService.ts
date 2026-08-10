@@ -23,7 +23,14 @@ export const ACTIONS = [
   'suppliers.read',
   'suppliers.manage',
   'customers.read',
-  'customers.manage'
+  'customers.manage',
+  'inventory_lots.read',
+  'inventory_lots.manage',
+  'inventory_lots.override',
+  'accounts.read',
+  'accounts.manage',
+  'journal_entries.read',
+  'journal_entries.manage'
 ] as const
 
 export type Action = (typeof ACTIONS)[number]
@@ -99,6 +106,28 @@ export interface AuthPrincipal {
  * for customer_contacts — there is no separate action for contact
  * management, mirroring supplier_item_prices' own precedent.
  *
+ * Slice 15 (inventory_lots.read/inventory_lots.manage/
+ * inventory_lots.override): a three-tier matrix distinct from every
+ * prior domain — owner and executive receive all three; operations
+ * receives read/manage but NOT override (operations may not bypass the
+ * expired/quarantined-lot consumption guard); finance receives read
+ * only (unlike suppliers/customers, stock lots are physical-inventory
+ * mechanics, not financial master data finance directly manages).
+ * inventory_lots.override is deliberately its own action, separate from
+ * .manage, so a role can manage lots without being able to override the
+ * negative-stock/expiry/quarantine guards.
+ *
+ * Slice 16 (accounts.read/accounts.manage/journal_entries.read/
+ * journal_entries.manage): the first domain where executive does NOT
+ * receive parity with owner — approved decision restricts manual
+ * accounting entirely to Owner and Finance, with executive receiving
+ * read-only visibility (accounts.read/journal_entries.read only) and
+ * operations receiving neither action at all. This is a deliberate,
+ * explicit departure from every prior domain's pattern (where executive
+ * always mirrors owner), reflecting that double-entry bookkeeping is
+ * finance's own domain, not a general management concern the way
+ * products/inventory/suppliers/customers are.
+ *
  * owner always receives every defined action, computed from ACTIONS
  * rather than hand-duplicated, so a newly added action is automatically
  * granted to owner without this file needing a matching edit.
@@ -116,7 +145,12 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'inventory_lots.manage',
+    'inventory_lots.override',
+    'accounts.read',
+    'journal_entries.read'
   ],
   operations: [
     'numbering.read',
@@ -127,7 +161,9 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'inventory_lots.manage'
   ],
   finance: [
     'company.read',
@@ -140,7 +176,12 @@ const NON_OWNER_ROLE_ACTIONS: Record<Exclude<RoleCode, 'owner'>, readonly Action
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'accounts.read',
+    'accounts.manage',
+    'journal_entries.read',
+    'journal_entries.manage'
   ]
 }
 

@@ -7,6 +7,8 @@ import type { LedgerPageProductsApi } from '../../shared/ipc/products'
 import type { LedgerPageInventoryItemsApi } from '../../shared/ipc/inventoryItems'
 import type { LedgerPageSuppliersApi } from '../../shared/ipc/suppliers'
 import type { LedgerPageCustomersApi } from '../../shared/ipc/customers'
+import type { LedgerPageInventoryLotsApi } from '../../shared/ipc/inventoryLots'
+import type { LedgerPageAccountingApi } from '../../shared/ipc/accounting'
 
 declare global {
   interface Window {
@@ -18,7 +20,9 @@ declare global {
       LedgerPageProductsApi &
       LedgerPageInventoryItemsApi &
       LedgerPageSuppliersApi &
-      LedgerPageCustomersApi
+      LedgerPageCustomersApi &
+      LedgerPageInventoryLotsApi &
+      LedgerPageAccountingApi
   }
 }
 

@@ -84,6 +84,59 @@ export interface SafeSessionInfo {
    * own precedent.
    */
   canManageCustomers: boolean
+  /**
+   * Same cosmetic-only posture — gates whether the renderer shows a
+   * Stock nav link / read-only view at all. Real enforcement is
+   * inventory-lots:* and stock:*'s own
+   * requireAuthorizedCaller('inventory_lots.read') checks, resolved
+   * fresh from SQLite on every call. This slice's own renderer surface
+   * is entirely read-only, so this is the only capability flag with
+   * any actual UI effect this slice — canManage/canOverride below exist
+   * for completeness and for later slices to consume, but Slice 15
+   * itself exposes no mutating IPC channel at all for any role to use.
+   */
+  canViewInventoryLots: boolean
+  /**
+   * Cosmetic only, mirroring every other canManage* flag. Owner,
+   * Executive, and Operations receive inventory_lots.manage; Finance
+   * does not (read-only, unlike Suppliers/Customers — stock lots are
+   * physical-inventory mechanics, not financial master data Finance
+   * directly manages).
+   */
+  canManageInventoryLots: boolean
+  /**
+   * Cosmetic only. Only Owner and Executive receive
+   * inventory_lots.override — Operations may manage lots but may not
+   * bypass the expired/quarantined-lot consumption guard.
+   */
+  canOverrideInventoryLots: boolean
+  /**
+   * Cosmetic only. Owner and Finance receive accounts.read; Executive
+   * also receives it (read-only visibility into the chart of accounts);
+   * Operations does not — the first domain where Operations is excluded
+   * from an action entirely, reflecting that double-entry bookkeeping
+   * is not an Operations concern the way products/inventory/suppliers/
+   * customers are.
+   */
+  canViewAccounts: boolean
+  /**
+   * Cosmetic only. Only Owner and Finance receive accounts.manage —
+   * Executive's own read-only accounting posture (see canViewAccounts)
+   * is a deliberate departure from every prior domain, where Executive
+   * always mirrored Owner.
+   */
+  canManageAccounts: boolean
+  /**
+   * Cosmetic only, mirroring canViewAccounts exactly: Owner, Executive,
+   * and Finance receive journal_entries.read; Operations does not.
+   */
+  canViewJournalEntries: boolean
+  /**
+   * Cosmetic only. Only Owner and Finance receive
+   * journal_entries.manage — manual journal posting is restricted to
+   * the accounting-authoritative roles, never Executive or Operations.
+   */
+  canManageJournalEntries: boolean
 }
 
 export type LoginOutcome = { success: true; session: SafeSessionInfo } | { success: false }
@@ -106,6 +159,13 @@ export type SessionState =
       canManageSuppliers: boolean
       canViewCustomers: boolean
       canManageCustomers: boolean
+      canViewInventoryLots: boolean
+      canManageInventoryLots: boolean
+      canOverrideInventoryLots: boolean
+      canViewAccounts: boolean
+      canManageAccounts: boolean
+      canViewJournalEntries: boolean
+      canManageJournalEntries: boolean
     }
 
 export interface StartIdleLockTimerOptions {
@@ -185,7 +245,14 @@ function toSafeSessionInfo(user: SafeUser, roleCodes: readonly string[]): SafeSe
     canViewSuppliers: can({ roleCodes }, 'suppliers.read'),
     canManageSuppliers: can({ roleCodes }, 'suppliers.manage'),
     canViewCustomers: can({ roleCodes }, 'customers.read'),
-    canManageCustomers: can({ roleCodes }, 'customers.manage')
+    canManageCustomers: can({ roleCodes }, 'customers.manage'),
+    canViewInventoryLots: can({ roleCodes }, 'inventory_lots.read'),
+    canManageInventoryLots: can({ roleCodes }, 'inventory_lots.manage'),
+    canOverrideInventoryLots: can({ roleCodes }, 'inventory_lots.override'),
+    canViewAccounts: can({ roleCodes }, 'accounts.read'),
+    canManageAccounts: can({ roleCodes }, 'accounts.manage'),
+    canViewJournalEntries: can({ roleCodes }, 'journal_entries.read'),
+    canManageJournalEntries: can({ roleCodes }, 'journal_entries.manage')
   }
 }
 
@@ -312,7 +379,14 @@ export function createLoginService(options: LoginServiceOptions): LoginService {
         canViewSuppliers: can({ roleCodes }, 'suppliers.read'),
         canManageSuppliers: can({ roleCodes }, 'suppliers.manage'),
         canViewCustomers: can({ roleCodes }, 'customers.read'),
-        canManageCustomers: can({ roleCodes }, 'customers.manage')
+        canManageCustomers: can({ roleCodes }, 'customers.manage'),
+        canViewInventoryLots: can({ roleCodes }, 'inventory_lots.read'),
+        canManageInventoryLots: can({ roleCodes }, 'inventory_lots.manage'),
+        canOverrideInventoryLots: can({ roleCodes }, 'inventory_lots.override'),
+        canViewAccounts: can({ roleCodes }, 'accounts.read'),
+        canManageAccounts: can({ roleCodes }, 'accounts.manage'),
+        canViewJournalEntries: can({ roleCodes }, 'journal_entries.read'),
+        canManageJournalEntries: can({ roleCodes }, 'journal_entries.manage')
       }
     },
 

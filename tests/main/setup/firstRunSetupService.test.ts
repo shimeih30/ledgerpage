@@ -115,7 +115,7 @@ describe('firstRunSetupService', () => {
       expect(credentialRows[0].isActive).toBe(true)
     }, 20000)
 
-    it('produces exactly 14 audit rows: company, 10 numbering rules, owner user, owner role, recovery credential', async () => {
+    it('produces exactly 16 audit rows: company, 12 numbering rules, owner user, owner role, recovery credential', async () => {
       const service = createFirstRunSetupService()
       const commitToken = await prepareAndConfirm(service)
 
@@ -127,7 +127,7 @@ describe('firstRunSetupService', () => {
         )
         .all() as { entityType: string; action: string; actorType: string }[]
 
-      expect(rows).toHaveLength(14)
+      expect(rows).toHaveLength(16)
       expect(rows.every((r) => r.action === 'create')).toBe(true)
       expect(rows.every((r) => r.actorType === 'system')).toBe(true)
 
@@ -137,7 +137,7 @@ describe('firstRunSetupService', () => {
       }, {})
       expect(countsByType).toEqual({
         company: 1,
-        numbering_rule: 10,
+        numbering_rule: 12,
         user: 1,
         user_role: 1,
         owner_recovery_credential: 1
@@ -160,13 +160,13 @@ describe('firstRunSetupService', () => {
       expect(JSON.stringify(changed)).not.toMatch(/\$argon2id\$/)
     }, 20000)
 
-    it('all 10 approved numbering-rule rows exist with current_sequence_value = 0 and the correct definitions', async () => {
+    it('all 12 approved numbering-rule rows exist with current_sequence_value = 0 and the correct definitions', async () => {
       const service = createFirstRunSetupService()
       const commitToken = await prepareAndConfirm(service)
       await service.completeSetup(db, VALID_COMPANY, VALID_OWNER, commitToken)
 
       const rows = db.select().from(numberingRules).all()
-      expect(rows).toHaveLength(10)
+      expect(rows).toHaveLength(12)
       for (const row of rows) {
         expect(row.currentSequenceValue).toBe(0)
         expect(row.currentSequenceYear).toBeNull()
@@ -178,6 +178,12 @@ describe('firstRunSetupService', () => {
       const customerRule = rows.find((r) => r.documentTypeKey === 'customer')!
       expect(customerRule.prefix).toBe('CUS')
       expect(customerRule.resetBehavior).toBe('never')
+      const inventoryLotRule = rows.find((r) => r.documentTypeKey === 'inventory_lot')!
+      expect(inventoryLotRule.prefix).toBe('LOT')
+      expect(inventoryLotRule.resetBehavior).toBe('never')
+      const journalEntryRule = rows.find((r) => r.documentTypeKey === 'journal_entry')!
+      expect(journalEntryRule.prefix).toBe('JE')
+      expect(journalEntryRule.resetBehavior).toBe('yearly')
     }, 20000)
 
     it('role rows remain exactly the four fixed, stable-id seeds — no duplicate role row is created', async () => {

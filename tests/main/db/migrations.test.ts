@@ -15,6 +15,8 @@ import { createSupplier } from '../../../src/main/db/supplierService'
 import { recordSupplierPrice } from '../../../src/main/db/supplierPriceService'
 import { createCustomer } from '../../../src/main/db/customerService'
 import { createCustomerContact } from '../../../src/main/db/customerContactService'
+import { createOpeningLot } from '../../../src/main/db/inventoryLotService'
+import { recordAdjustment, reverseMovement } from '../../../src/main/db/stockMovementService'
 import { createUser } from '../../../src/main/auth/userService'
 import { hashPassword } from '../../../src/main/auth/passwordHashing'
 import { userRoles } from '../../../src/main/db/schema'
@@ -1901,6 +1903,1192 @@ describe('Slice 14 migration (0008_customers)', () => {
       ]
 
       const diffOutput = execFileSync('git', ['diff', 'm1-slice-13', '--', ...filesToCheck], {
+        cwd: process.cwd(),
+        encoding: 'utf-8'
+      })
+
+      expect(diffOutput.trim()).toBe('')
+    })
+  })
+})
+
+describe('Slice 15 migration (0009_inventory_lots)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = createTempDir('ledgerpage-migration-0009')
+  })
+
+  afterEach(() => {
+    removeTempDir(dir)
+  })
+
+  function seedInventoryLotNumberingRule(rawDb: ReturnType<typeof createDatabaseConnection>): void {
+    const now = Date.now()
+    rawDb
+      .prepare(
+        `INSERT INTO numbering_rules
+           (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+           VALUES ('numbering_rule_inventory_lot', 'primary_company', 'inventory_lot', 'LOT', 6, 'never', 0, NULL, ?, ?)`
+      )
+      .run(now, now)
+  }
+
+  function seedFixtureItem(db: AppDb): string {
+    return createInventoryItem(
+      db,
+      {
+        code: 'FLOUR',
+        name: 'Flour',
+        category: 'Dry goods',
+        itemType: 'ingredient',
+        unitOfMeasureId: 'uom_kg',
+        minimumStock: 0,
+        reorderQuantity: 0,
+        leadTimeDays: 0
+      },
+      { type: 'system' }
+    ).id
+  }
+
+  describe('fresh database', () => {
+    it('applies all migrations 0000-0009 cleanly, including inventory_lots and stock_movements', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tables = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tables.map((t) => t.name)).toContain('inventory_lots')
+      expect(tables.map((t) => t.name)).toContain('stock_movements')
+
+      rawDb.close()
+    })
+
+    it('applies all four expected indexes on stock_movements and one on inventory_lots', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const lotIndexes = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+        .all('inventory_lots') as SqliteIndexRow[]
+      // The unique (company_id, internal_lot_number) constraint is
+      // itself implemented as a unique index by SQLite.
+      expect(lotIndexes.map((i) => i.name)).toContain(
+        'inventory_lots_company_internal_lot_number_unique'
+      )
+
+      const movementIndexes = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+        .all('stock_movements') as SqliteIndexRow[]
+      const movementIndexNames = movementIndexes.map((i) => i.name)
+      expect(movementIndexNames).toContain('stock_movements_lot_history_idx')
+      expect(movementIndexNames).toContain('stock_movements_reference_idx')
+      expect(movementIndexNames).toContain('stock_movements_reversal_idx')
+      expect(movementIndexNames).toContain('stock_movements_reversed_movement_id_unique')
+
+      rawDb.close()
+    })
+
+    it('the inventory_lot numbering rule is available for allocation once seeded', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+      seedReferenceData(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb) as AppDb
+      createCompany(
+        db,
+        { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+        new Date()
+      )
+      seedInventoryLotNumberingRule(rawDb)
+      const itemId = seedFixtureItem(db)
+
+      const lot = createOpeningLot(
+        db,
+        {
+          inventoryItemId: itemId,
+          receivedDate: new Date(),
+          quantityReceivedScaled: 1000,
+          unitCostMinor: 100
+        },
+        { type: 'system' }
+      )
+      expect(lot.internalLotNumber).toBe('LOT-000001')
+
+      rawDb.close()
+    })
+
+    describe('inventory_lots CHECK constraints', () => {
+      function insertBaseLot(
+        rawDb: ReturnType<typeof createDatabaseConnection>,
+        itemId: string,
+        overrides: Record<string, string | number> = {}
+      ): void {
+        const fields = {
+          id: `inventory_lot_${Math.random()}`,
+          company_id: 'primary_company',
+          inventory_item_id: itemId,
+          received_date: Date.now(),
+          quantity_received_scaled: 1000,
+          quantity_remaining_scaled: 1000,
+          unit_cost_minor: 100,
+          total_cost_minor: 100000,
+          cost_remaining_minor: 100000,
+          currency_id: 'currency_usd',
+          internal_lot_number: `LOT-${Math.floor(Math.random() * 1000000)}`,
+          lifecycle_status: 'active',
+          created_at: Date.now(),
+          updated_at: Date.now(),
+          ...overrides
+        }
+        const columns = Object.keys(fields).join(', ')
+        const placeholders = Object.keys(fields)
+          .map(() => '?')
+          .join(', ')
+        rawDb
+          .prepare(`INSERT INTO inventory_lots (${columns}) VALUES (${placeholders})`)
+          .run(...Object.values(fields))
+      }
+
+      let rawDb: ReturnType<typeof createDatabaseConnection>
+      let db: AppDb
+      let itemId: string
+
+      beforeEach(() => {
+        rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+        runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(rawDb)
+        db = drizzle<Record<string, never>>(rawDb) as AppDb
+        createCompany(
+          db,
+          { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+          new Date()
+        )
+        itemId = seedFixtureItem(db)
+      })
+
+      afterEach(() => {
+        rawDb.close()
+      })
+
+      it('rejects a non-primary company_id', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { company_id: 'someone_else' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a non-positive quantity_received_scaled', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { quantity_received_scaled: 0 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a negative quantity_remaining_scaled', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { quantity_remaining_scaled: -1 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects quantity_remaining_scaled exceeding quantity_received_scaled', () => {
+        expect(() =>
+          insertBaseLot(rawDb, itemId, {
+            quantity_received_scaled: 100,
+            quantity_remaining_scaled: 101
+          })
+        ).toThrow(/CHECK constraint failed/)
+      })
+
+      it('rejects a negative unit_cost_minor', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { unit_cost_minor: -1 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a negative total_cost_minor', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { total_cost_minor: -1 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a negative cost_remaining_minor', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { cost_remaining_minor: -1 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects cost_remaining_minor exceeding total_cost_minor', () => {
+        expect(() =>
+          insertBaseLot(rawDb, itemId, { total_cost_minor: 100, cost_remaining_minor: 101 })
+        ).toThrow(/CHECK constraint failed/)
+      })
+
+      it('rejects an invalid lifecycle_status', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { lifecycle_status: 'bogus' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('accepts each of the three valid lifecycle statuses', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { lifecycle_status: 'active' })).not.toThrow()
+        expect(() =>
+          insertBaseLot(rawDb, itemId, { lifecycle_status: 'quarantined' })
+        ).not.toThrow()
+        expect(() =>
+          insertBaseLot(rawDb, itemId, {
+            lifecycle_status: 'depleted',
+            quantity_remaining_scaled: 0,
+            cost_remaining_minor: 0
+          })
+        ).not.toThrow()
+      })
+
+      it('rejects a duplicate (company_id, internal_lot_number) pair', () => {
+        insertBaseLot(rawDb, itemId, { internal_lot_number: 'LOT-000001' })
+        expect(() => insertBaseLot(rawDb, itemId, { internal_lot_number: 'LOT-000001' })).toThrow(
+          /UNIQUE constraint failed/
+        )
+      })
+
+      it('the inventory_item_id foreign key rejects a reference to a nonexistent item', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { inventory_item_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the supplier_id foreign key rejects a reference to a nonexistent supplier', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { supplier_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the currency_id foreign key rejects a reference to a nonexistent currency', () => {
+        expect(() => insertBaseLot(rawDb, itemId, { currency_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the company_id foreign key rejects a reference to a nonexistent company', () => {
+        // Standalone setup, deliberately never calling createCompany --
+        // matching the established pattern from the Slice 14 suite's
+        // own equivalent test. company_id is constrained by the
+        // singleton CHECK to always equal 'primary_company', so the
+        // only way to isolate the FK (as opposed to the CHECK) is to
+        // attempt an insert referencing that exact id while no such
+        // row actually exists yet.
+        const standaloneRawDb = createDatabaseConnection(join(dir, 'standalone-company-fk.db'))
+        runMigrations(standaloneRawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(standaloneRawDb)
+        expect(() =>
+          standaloneRawDb
+            .prepare(
+              `INSERT INTO inventory_lots
+               (id, company_id, inventory_item_id, received_date, quantity_received_scaled, quantity_remaining_scaled, unit_cost_minor, total_cost_minor, cost_remaining_minor, currency_id, internal_lot_number, lifecycle_status, created_at, updated_at)
+               VALUES ('lot_x', 'primary_company', 'does-not-exist', ?, 1000, 1000, 100, 100000, 100000, 'currency_usd', 'LOT-000001', 'active', ?, ?)`
+            )
+            .run(Date.now(), Date.now(), Date.now())
+        ).toThrow(/FOREIGN KEY constraint failed/)
+        standaloneRawDb.close()
+      })
+    })
+
+    describe('stock_movements CHECK constraints and FKs', () => {
+      let rawDb: ReturnType<typeof createDatabaseConnection>
+      let db: AppDb
+      let lotId: string
+
+      beforeEach(() => {
+        rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+        runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(rawDb)
+        db = drizzle<Record<string, never>>(rawDb) as AppDb
+        createCompany(
+          db,
+          { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+          new Date()
+        )
+        seedInventoryLotNumberingRule(rawDb)
+        const itemId = seedFixtureItem(db)
+        lotId = createOpeningLot(
+          db,
+          {
+            inventoryItemId: itemId,
+            receivedDate: new Date(),
+            quantityReceivedScaled: 1000,
+            unitCostMinor: 100
+          },
+          { type: 'system' }
+        ).id
+      })
+
+      afterEach(() => {
+        rawDb.close()
+      })
+
+      function insertBaseMovement(overrides: Record<string, string | number | null> = {}): void {
+        const fields: Record<string, string | number | null> = {
+          id: `stock_movement_${Math.random()}`,
+          company_id: 'primary_company',
+          inventory_lot_id: lotId,
+          movement_type: 'adjustment',
+          physical_quantity_delta_scaled: 100,
+          reserved_quantity_delta_scaled: 0,
+          cost_delta_minor: 0,
+          reference_type: 'manual_adjustment',
+          created_at: Date.now(),
+          ...overrides
+        }
+        const columns = Object.keys(fields).join(', ')
+        const placeholders = Object.keys(fields)
+          .map(() => '?')
+          .join(', ')
+        rawDb
+          .prepare(`INSERT INTO stock_movements (${columns}) VALUES (${placeholders})`)
+          .run(...Object.values(fields))
+      }
+
+      it('rejects a non-primary company_id', () => {
+        expect(() => insertBaseMovement({ company_id: 'someone_else' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects an invalid movement_type', () => {
+        expect(() => insertBaseMovement({ movement_type: 'bogus' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('accepts each of the six valid movement types', () => {
+        for (const movementType of [
+          'receipt',
+          'consumption',
+          'adjustment',
+          'reservation',
+          'release',
+          'reversal'
+        ]) {
+          expect(() => insertBaseMovement({ movement_type: movementType })).not.toThrow()
+        }
+      })
+
+      it('rejects an invalid reference_type', () => {
+        expect(() => insertBaseMovement({ reference_type: 'bogus' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('accepts each of the seven valid reference types', () => {
+        for (const referenceType of [
+          'opening_stock',
+          'manual_adjustment',
+          'goods_receipt',
+          'production',
+          'sales',
+          'reservation',
+          'reversal'
+        ]) {
+          expect(() => insertBaseMovement({ reference_type: referenceType })).not.toThrow()
+        }
+      })
+
+      it('rejects a movement with both physical and reserved deltas at zero', () => {
+        expect(() =>
+          insertBaseMovement({
+            physical_quantity_delta_scaled: 0,
+            reserved_quantity_delta_scaled: 0
+          })
+        ).toThrow(/CHECK constraint failed/)
+      })
+
+      it('accepts a movement with a nonzero reserved delta and a zero physical delta', () => {
+        expect(() =>
+          insertBaseMovement({
+            physical_quantity_delta_scaled: 0,
+            reserved_quantity_delta_scaled: 50
+          })
+        ).not.toThrow()
+      })
+
+      it('rejects a duplicate reversed_movement_id', () => {
+        insertBaseMovement({ id: 'mv_original' })
+        insertBaseMovement({ id: 'mv_reversal_1', reversed_movement_id: 'mv_original' })
+        expect(() =>
+          insertBaseMovement({ id: 'mv_reversal_2', reversed_movement_id: 'mv_original' })
+        ).toThrow(/UNIQUE constraint failed/)
+      })
+
+      it('allows multiple movements with a NULL reversed_movement_id (NULLs are not considered duplicates)', () => {
+        insertBaseMovement({ id: 'mv_a' })
+        expect(() => insertBaseMovement({ id: 'mv_b' })).not.toThrow()
+      })
+
+      it('the inventory_lot_id foreign key rejects a reference to a nonexistent lot', () => {
+        expect(() => insertBaseMovement({ inventory_lot_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the reversed_movement_id foreign key rejects a reference to a nonexistent movement', () => {
+        expect(() => insertBaseMovement({ reversed_movement_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the company_id foreign key rejects a reference to a nonexistent company', () => {
+        // Standalone setup, deliberately never calling createCompany --
+        // same reasoning as inventory_lots' own equivalent test above.
+        const standaloneRawDb = createDatabaseConnection(join(dir, 'standalone-company-fk-2.db'))
+        runMigrations(standaloneRawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(standaloneRawDb)
+        expect(() =>
+          standaloneRawDb
+            .prepare(
+              `INSERT INTO stock_movements
+               (id, company_id, inventory_lot_id, movement_type, physical_quantity_delta_scaled, reserved_quantity_delta_scaled, cost_delta_minor, reference_type, created_at)
+               VALUES ('mv_x', 'primary_company', 'does-not-exist', 'adjustment', 100, 0, 0, 'manual_adjustment', ?)`
+            )
+            .run(Date.now())
+        ).toThrow(/FOREIGN KEY constraint failed/)
+        standaloneRawDb.close()
+      })
+
+      it('a movement can be reversed via the real service, and the reversal round-trips through these same constraints', () => {
+        const original = recordAdjustment(
+          db,
+          {
+            inventoryLotId: lotId,
+            physicalQuantityDeltaScaled: -100,
+            costDeltaMinor: -10,
+            reason: 'Test adjustment'
+          },
+          { type: 'system' }
+        )
+        const reversal = reverseMovement(db, original.id, 'Undo test adjustment', {
+          type: 'system'
+        })
+        expect(reversal.physicalQuantityDeltaScaled).toBe(100)
+        expect(reversal.reversedMovementId).toBe(original.id)
+      })
+    })
+  })
+
+  describe('upgrade from the imported Slice 14 baseline', () => {
+    it('a database with only migrations 0000-0008 applied upgrades cleanly through 0009, preserving all existing data', async () => {
+      const dbPath = join(dir, 'ledgerpage.db')
+      const truncatedMigrationsDir = join(dir, 'migrations-through-0008')
+      buildTruncatedMigrationsFolder(REAL_MIGRATIONS_FOLDER, truncatedMigrationsDir, 9)
+
+      // Simulate the imported, verified Slice 14 baseline: only
+      // 0000-0008 applied.
+      const rawDb = createDatabaseConnection(dbPath)
+      runMigrations(rawDb, truncatedMigrationsDir)
+
+      const tablesBeforeUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesBeforeUpgrade.map((t) => t.name)).not.toContain('inventory_lots')
+      expect(tablesBeforeUpgrade.map((t) => t.name)).not.toContain('stock_movements')
+
+      // Seed real Slice 5-14 data on this pre-Slice-15 database, via
+      // the real, audit-writing service functions.
+      seedReferenceData(rawDb)
+      seedRoles(rawDb)
+      const db = drizzle<Record<string, never>>(rawDb) as AppDb
+      createCompany(
+        db,
+        {
+          name: 'Farmer Ben Sauces',
+          address: '1 Main St',
+          contactDetails: 'ben@example.com',
+          currencyId: 'currency_usd'
+        },
+        new Date()
+      )
+      const now = new Date()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_product', 'primary_company', 'product', 'PRD', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(now.getTime(), now.getTime())
+      const taxCode = createTaxCode(
+        db,
+        { code: 'STD', name: 'Standard', category: 'standard' },
+        { type: 'system' }
+      )
+      const passwordHash = await hashPassword(REAL_PASSWORD)
+      const owner = db.transaction((tx) =>
+        createUser(tx, { loginIdentifier: 'ben', displayName: 'Ben', passwordHash })
+      )
+      db.insert(userRoles)
+        .values({ userId: owner.id, roleId: 'role_owner', createdAt: new Date() })
+        .run()
+      const product = createProduct(
+        db,
+        { name: 'Chilli Sauce', type: 'manufactured' },
+        { type: 'system' }
+      )
+      const variant = createVariant(
+        db,
+        { productId: product.id, code: '100ML', name: '100 ml bottle', sellingPriceMinor: 1029 },
+        { type: 'system' }
+      )
+      const inventoryItem = createInventoryItem(
+        db,
+        {
+          code: 'FLOUR',
+          name: 'Flour',
+          category: 'Dry goods',
+          itemType: 'ingredient',
+          unitOfMeasureId: 'uom_kg',
+          minimumStock: 0,
+          reorderQuantity: 0,
+          leadTimeDays: 0
+        },
+        { type: 'system' }
+      )
+      const supplierNumberingNow = Date.now()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_supplier', 'primary_company', 'supplier', 'SUP', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(supplierNumberingNow, supplierNumberingNow)
+      const supplier = createSupplier(db, { name: 'Acme Foods' }, { type: 'system' })
+      const price = recordSupplierPrice(
+        db,
+        {
+          supplierId: supplier.id,
+          inventoryItemId: inventoryItem.id,
+          priceMinor: 500,
+          effectiveFrom: new Date()
+        },
+        { type: 'system' }
+      )
+      const customerNumberingNow = Date.now()
+      rawDb
+        .prepare(
+          `INSERT INTO numbering_rules
+             (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+             VALUES ('numbering_rule_customer', 'primary_company', 'customer', 'CUS', 6, 'never', 0, NULL, ?, ?)`
+        )
+        .run(customerNumberingNow, customerNumberingNow)
+      const customer = createCustomer(db, { name: 'Acme Retail' }, { type: 'system' })
+      const contact = createCustomerContact(
+        db,
+        { customerId: customer.id, name: 'Jane Doe' },
+        { type: 'system' }
+      )
+
+      const auditRowCountBeforeUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      expect(auditRowCountBeforeUpgrade).toBeGreaterThan(0)
+
+      // Now upgrade: apply the full, real migrations folder (0000-0009)
+      // against this same, already-populated database file.
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tablesAfterUpgrade = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('inventory_lots')
+      expect(tablesAfterUpgrade.map((t) => t.name)).toContain('stock_movements')
+
+      // This test manually seeds numbering rules rather than going
+      // through the real first-run transaction, so the 'inventory_lot'
+      // rule needs the same explicit seed a real post-upgrade database
+      // would already have from Slice 8.
+      seedInventoryLotNumberingRule(rawDb)
+      const lot = createOpeningLot(
+        db,
+        {
+          inventoryItemId: inventoryItem.id,
+          receivedDate: new Date(),
+          quantityReceivedScaled: 20000,
+          unitCostMinor: 350
+        },
+        { type: 'system' }
+      )
+      expect(lot.internalLotNumber).toBe('LOT-000001')
+      expect(lot.totalCostMinor).toBe(7000)
+
+      // Every table's pre-existing data survives the upgrade intact.
+      const companyRow = rawDb.prepare('SELECT * FROM company').get() as
+        { name: string } | undefined
+      expect(companyRow?.name).toBe('Farmer Ben Sauces')
+
+      const taxCodeRow = rawDb.prepare('SELECT * FROM tax_codes WHERE id = ?').get(taxCode.id) as
+        { code: string } | undefined
+      expect(taxCodeRow?.code).toBe('STD')
+
+      const userRow = rawDb.prepare('SELECT * FROM users WHERE id = ?').get(owner.id) as
+        { login_identifier: string } | undefined
+      expect(userRow?.login_identifier).toBe('ben')
+
+      const productRow = rawDb.prepare('SELECT * FROM products WHERE id = ?').get(product.id) as
+        { code: string } | undefined
+      expect(productRow?.code).toBe('PRD-000001')
+
+      const variantRow = rawDb
+        .prepare('SELECT * FROM product_variants WHERE id = ?')
+        .get(variant.id) as { code: string } | undefined
+      expect(variantRow?.code).toBe('100ML')
+
+      const itemRow = rawDb
+        .prepare('SELECT * FROM inventory_items WHERE id = ?')
+        .get(inventoryItem.id) as { code: string } | undefined
+      expect(itemRow?.code).toBe('FLOUR')
+
+      const supplierRow = rawDb.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplier.id) as
+        { code: string } | undefined
+      expect(supplierRow?.code).toBe('SUP-000001')
+
+      const priceRow = rawDb
+        .prepare('SELECT * FROM supplier_item_prices WHERE id = ?')
+        .get(price.id) as { price_minor: number } | undefined
+      expect(priceRow?.price_minor).toBe(500)
+
+      const customerRow = rawDb.prepare('SELECT * FROM customers WHERE id = ?').get(customer.id) as
+        { code: string } | undefined
+      expect(customerRow?.code).toBe('CUS-000001')
+
+      const contactRow = rawDb
+        .prepare('SELECT * FROM customer_contacts WHERE id = ?')
+        .get(contact.id) as { name: string } | undefined
+      expect(contactRow?.name).toBe('Jane Doe')
+
+      const auditRowCountAfterUpgrade = (
+        rawDb.prepare('SELECT COUNT(*) as count FROM audit_log_entries').get() as {
+          count: number
+        }
+      ).count
+      // The upgrade itself adds no audit rows; creating the lot
+      // afterward adds exactly 2 more (one for the lot, one for its
+      // initial receipt movement).
+      expect(auditRowCountAfterUpgrade).toBe(auditRowCountBeforeUpgrade + 2)
+
+      rawDb.close()
+    }, 20000)
+  })
+
+  describe('no pre-existing migration was modified', () => {
+    it('migrations 0000-0008 remain byte-identical to their state at the imported m1-slice-14 baseline', () => {
+      const filesToCheck = [
+        'migrations/0000_reference_data_tables.sql',
+        'migrations/0001_company_and_numbering_rules.sql',
+        'migrations/0002_tax_configuration.sql',
+        'migrations/0003_authentication_foundations.sql',
+        'migrations/0004_audit_logging.sql',
+        'migrations/0005_products_and_variants.sql',
+        'migrations/0006_inventory_items.sql',
+        'migrations/0007_suppliers.sql',
+        'migrations/0008_customers.sql'
+      ]
+
+      const diffOutput = execFileSync('git', ['diff', 'm1-slice-14', '--', ...filesToCheck], {
+        cwd: process.cwd(),
+        encoding: 'utf-8'
+      })
+
+      expect(diffOutput.trim()).toBe('')
+    })
+  })
+})
+
+describe('Slice 16 migration (0010_accounting_foundations)', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = createTempDir('ledgerpage-migration-0010')
+  })
+
+  afterEach(() => {
+    removeTempDir(dir)
+  })
+
+  function seedJournalEntryNumberingRule(rawDb: ReturnType<typeof createDatabaseConnection>): void {
+    const now = Date.now()
+    rawDb
+      .prepare(
+        `INSERT INTO numbering_rules
+           (id, company_id, document_type_key, prefix, padding_length, reset_behavior, current_sequence_value, current_sequence_year, created_at, updated_at)
+           VALUES ('numbering_rule_journal_entry', 'primary_company', 'journal_entry', 'JE', 6, 'yearly', 0, NULL, ?, ?)`
+      )
+      .run(now, now)
+  }
+
+  function insertBaseAccount(
+    rawDb: ReturnType<typeof createDatabaseConnection>,
+    overrides: Record<string, string | number> = {}
+  ): void {
+    const now = Date.now()
+    const fields = {
+      id: `account_${Math.random()}`,
+      company_id: 'primary_company',
+      code: `${1000 + Math.floor(Math.random() * 8999)}`,
+      name: 'Test Account',
+      category: 'asset',
+      is_active: 1,
+      created_at: now,
+      updated_at: now,
+      ...overrides
+    }
+    const columns = Object.keys(fields).join(', ')
+    const placeholders = Object.keys(fields)
+      .map(() => '?')
+      .join(', ')
+    rawDb
+      .prepare(`INSERT INTO accounts (${columns}) VALUES (${placeholders})`)
+      .run(...Object.values(fields))
+  }
+
+  describe('fresh database', () => {
+    it('applies all migrations 0000-0010 cleanly, including accounts, journal_entries and journal_entry_lines', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const tables = rawDb
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as SqliteTableRow[]
+      const tableNames = tables.map((t) => t.name)
+      expect(tableNames).toContain('accounts')
+      expect(tableNames).toContain('journal_entries')
+      expect(tableNames).toContain('journal_entry_lines')
+
+      rawDb.close()
+    })
+
+    it('accounts has exactly the expected columns', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const columns = rawDb.prepare('PRAGMA table_info(accounts)').all() as { name: string }[]
+      const columnNames = columns.map((c) => c.name).sort()
+      expect(columnNames).toEqual(
+        [
+          'id',
+          'company_id',
+          'code',
+          'name',
+          'category',
+          'subtype',
+          'is_active',
+          'created_at',
+          'updated_at'
+        ].sort()
+      )
+
+      rawDb.close()
+    })
+
+    it('journal_entries has exactly the expected columns', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const columns = rawDb.prepare('PRAGMA table_info(journal_entries)').all() as {
+        name: string
+      }[]
+      const columnNames = columns.map((c) => c.name).sort()
+      expect(columnNames).toEqual(
+        [
+          'id',
+          'company_id',
+          'entry_number',
+          'entry_date',
+          'description',
+          'external_reference',
+          'currency_id',
+          'created_by_user_id',
+          'reversed_entry_id',
+          'reversal_reason',
+          'created_at'
+        ].sort()
+      )
+
+      rawDb.close()
+    })
+
+    it('journal_entry_lines has exactly the expected columns', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      const columns = rawDb.prepare('PRAGMA table_info(journal_entry_lines)').all() as {
+        name: string
+      }[]
+      const columnNames = columns.map((c) => c.name).sort()
+      expect(columnNames).toEqual(
+        [
+          'id',
+          'company_id',
+          'journal_entry_id',
+          'account_id',
+          'debit_minor',
+          'credit_minor',
+          'description',
+          'line_order'
+        ].sort()
+      )
+
+      rawDb.close()
+    })
+
+    it('applies the expected indexes on all three tables', () => {
+      const rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+      runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+
+      function indexNamesFor(tableName: string): string[] {
+        const rows = rawDb
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+          .all(tableName) as SqliteIndexRow[]
+        return rows.map((r) => r.name)
+      }
+
+      const accountIndexes = indexNamesFor('accounts')
+      expect(accountIndexes).toContain('accounts_code_idx')
+      expect(accountIndexes).toContain('accounts_category_idx')
+      expect(accountIndexes).toContain('accounts_active_idx')
+      expect(accountIndexes).toContain('accounts_company_code_unique')
+
+      const journalEntryIndexes = indexNamesFor('journal_entries')
+      expect(journalEntryIndexes).toContain('journal_entries_entry_date_idx')
+      expect(journalEntryIndexes).toContain('journal_entries_entry_number_idx')
+      expect(journalEntryIndexes).toContain('journal_entries_created_by_user_idx')
+      expect(journalEntryIndexes).toContain('journal_entries_reversed_entry_idx')
+      expect(journalEntryIndexes).toContain('journal_entries_company_entry_number_unique')
+      expect(journalEntryIndexes).toContain('journal_entries_reversed_entry_id_unique')
+
+      const lineIndexes = indexNamesFor('journal_entry_lines')
+      expect(lineIndexes).toContain('journal_entry_lines_entry_line_order_idx')
+      expect(lineIndexes).toContain('journal_entry_lines_account_idx')
+      expect(lineIndexes).toContain('journal_entry_lines_entry_line_order_unique')
+
+      rawDb.close()
+    })
+
+    describe('accounts CHECK constraints, FKs and uniqueness', () => {
+      let rawDb: ReturnType<typeof createDatabaseConnection>
+
+      beforeEach(() => {
+        rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+        runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(rawDb)
+        const db = drizzle<Record<string, never>>(rawDb) as AppDb
+        createCompany(
+          db,
+          { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+          new Date()
+        )
+      })
+
+      afterEach(() => {
+        rawDb.close()
+      })
+
+      it('rejects a non-primary company_id', () => {
+        expect(() => insertBaseAccount(rawDb, { company_id: 'someone_else' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a code shorter than 4 digits', () => {
+        expect(() => insertBaseAccount(rawDb, { code: '100' })).toThrow(/CHECK constraint failed/)
+      })
+
+      it('rejects a code longer than 10 digits', () => {
+        expect(() => insertBaseAccount(rawDb, { code: '12345678901' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a non-numeric code', () => {
+        expect(() => insertBaseAccount(rawDb, { code: '10AB' })).toThrow(/CHECK constraint failed/)
+      })
+
+      it('accepts codes at the 4-digit and 10-digit boundaries', () => {
+        expect(() => insertBaseAccount(rawDb, { code: '1000' })).not.toThrow()
+        expect(() => insertBaseAccount(rawDb, { code: '1234567890' })).not.toThrow()
+      })
+
+      it('rejects an invalid category', () => {
+        expect(() => insertBaseAccount(rawDb, { category: 'bogus' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('accepts each of the six valid categories', () => {
+        for (const category of [
+          'asset',
+          'liability',
+          'equity',
+          'revenue',
+          'cost_of_goods_sold',
+          'expense'
+        ]) {
+          expect(() =>
+            insertBaseAccount(rawDb, {
+              code: `${2000 + Math.floor(Math.random() * 1000)}`,
+              category
+            })
+          ).not.toThrow()
+        }
+      })
+
+      it('rejects a duplicate (company_id, code) pair', () => {
+        insertBaseAccount(rawDb, { code: '1000' })
+        expect(() => insertBaseAccount(rawDb, { code: '1000' })).toThrow(/UNIQUE constraint failed/)
+      })
+
+      it('the company_id foreign key rejects a reference to a nonexistent company', () => {
+        const standaloneRawDb = createDatabaseConnection(join(dir, 'standalone-account-fk.db'))
+        runMigrations(standaloneRawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(standaloneRawDb)
+        expect(() =>
+          standaloneRawDb
+            .prepare(
+              `INSERT INTO accounts
+               (id, company_id, code, name, category, is_active, created_at, updated_at)
+               VALUES ('account_x', 'primary_company', '1000', 'X', 'asset', 1, ?, ?)`
+            )
+            .run(Date.now(), Date.now())
+        ).toThrow(/FOREIGN KEY constraint failed/)
+        standaloneRawDb.close()
+      })
+    })
+
+    describe('journal_entries and journal_entry_lines CHECK constraints, FKs and uniqueness', () => {
+      let rawDb: ReturnType<typeof createDatabaseConnection>
+      let db: AppDb
+      let ownerId: string
+      let accountId: string
+
+      beforeEach(async () => {
+        rawDb = createDatabaseConnection(join(dir, 'ledgerpage.db'))
+        runMigrations(rawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(rawDb)
+        seedRoles(rawDb)
+        db = drizzle<Record<string, never>>(rawDb) as AppDb
+        createCompany(
+          db,
+          { name: 'X', address: 'Y', contactDetails: 'Z', currencyId: 'currency_usd' },
+          new Date()
+        )
+        seedJournalEntryNumberingRule(rawDb)
+        const passwordHash = await hashPassword('a-strong-password-1')
+        const owner = db.transaction((tx) =>
+          createUser(tx, { loginIdentifier: 'ben', displayName: 'Ben', passwordHash })
+        )
+        ownerId = owner.id
+        db.insert(userRoles)
+          .values({ userId: owner.id, roleId: 'role_owner', createdAt: new Date() })
+          .run()
+        accountId = `account_${Math.random()}`
+        insertBaseAccount(rawDb, { id: accountId, code: '1000' })
+      })
+
+      afterEach(() => {
+        rawDb.close()
+      })
+
+      function insertBaseJournalEntry(overrides: Record<string, string | number | null> = {}) {
+        const now = Date.now()
+        const id = (overrides.id as string) ?? `journal_entry_${Math.random()}`
+        const fields = {
+          id,
+          company_id: 'primary_company',
+          entry_number: `JE-${Math.floor(Math.random() * 1000000)}`,
+          entry_date: now,
+          description: 'Test entry',
+          currency_id: 'currency_usd',
+          created_by_user_id: ownerId,
+          created_at: now,
+          ...overrides
+        }
+        const columns = Object.keys(fields).join(', ')
+        const placeholders = Object.keys(fields)
+          .map(() => '?')
+          .join(', ')
+        rawDb
+          .prepare(`INSERT INTO journal_entries (${columns}) VALUES (${placeholders})`)
+          .run(...Object.values(fields))
+        return id
+      }
+
+      function insertBaseLine(
+        journalEntryId: string,
+        overrides: Record<string, string | number | null> = {}
+      ) {
+        const fields = {
+          id: `journal_entry_line_${Math.random()}`,
+          company_id: 'primary_company',
+          journal_entry_id: journalEntryId,
+          account_id: accountId,
+          debit_minor: 100,
+          credit_minor: 0,
+          line_order: 0,
+          ...overrides
+        }
+        const columns = Object.keys(fields).join(', ')
+        const placeholders = Object.keys(fields)
+          .map(() => '?')
+          .join(', ')
+        rawDb
+          .prepare(`INSERT INTO journal_entry_lines (${columns}) VALUES (${placeholders})`)
+          .run(...Object.values(fields))
+      }
+
+      it('rejects a non-primary company_id on journal_entries', () => {
+        expect(() => insertBaseJournalEntry({ company_id: 'someone_else' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a reversal_reason without a reversed_entry_id', () => {
+        expect(() => insertBaseJournalEntry({ reversal_reason: 'X' })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a reversed_entry_id without a reversal_reason', () => {
+        const originalId = insertBaseJournalEntry()
+        expect(() => insertBaseJournalEntry({ reversed_entry_id: originalId })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('accepts a reversed_entry_id paired with a reversal_reason', () => {
+        const originalId = insertBaseJournalEntry()
+        expect(() =>
+          insertBaseJournalEntry({ reversed_entry_id: originalId, reversal_reason: 'Undo' })
+        ).not.toThrow()
+      })
+
+      it('rejects a duplicate (company_id, entry_number) pair', () => {
+        insertBaseJournalEntry({ entry_number: 'JE-000001' })
+        expect(() => insertBaseJournalEntry({ entry_number: 'JE-000001' })).toThrow(
+          /UNIQUE constraint failed/
+        )
+      })
+
+      it('rejects a duplicate reversed_entry_id', () => {
+        const originalId = insertBaseJournalEntry()
+        insertBaseJournalEntry({ reversed_entry_id: originalId, reversal_reason: 'First' })
+        expect(() =>
+          insertBaseJournalEntry({ reversed_entry_id: originalId, reversal_reason: 'Second' })
+        ).toThrow(/UNIQUE constraint failed/)
+      })
+
+      it('the currency_id foreign key rejects a reference to a nonexistent currency', () => {
+        expect(() => insertBaseJournalEntry({ currency_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the created_by_user_id foreign key rejects a reference to a nonexistent user', () => {
+        expect(() => insertBaseJournalEntry({ created_by_user_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the reversed_entry_id foreign key rejects a reference to a nonexistent entry', () => {
+        expect(() =>
+          insertBaseJournalEntry({ reversed_entry_id: 'does-not-exist', reversal_reason: 'X' })
+        ).toThrow(/FOREIGN KEY constraint failed/)
+      })
+
+      it('rejects a negative debit_minor on a line', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { debit_minor: -1 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a negative credit_minor on a line', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { debit_minor: 0, credit_minor: -1 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a line with both debit and credit positive', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { debit_minor: 100, credit_minor: 100 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('rejects a line with neither debit nor credit positive', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { debit_minor: 0, credit_minor: 0 })).toThrow(
+          /CHECK constraint failed/
+        )
+      })
+
+      it('accepts a line with only credit positive', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { debit_minor: 0, credit_minor: 100 })).not.toThrow()
+      })
+
+      it('rejects a negative line_order', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { line_order: -1 })).toThrow(/CHECK constraint failed/)
+      })
+
+      it('rejects a duplicate (journal_entry_id, line_order) pair', () => {
+        const entryId = insertBaseJournalEntry()
+        insertBaseLine(entryId, { line_order: 0 })
+        expect(() => insertBaseLine(entryId, { line_order: 0 })).toThrow(/UNIQUE constraint failed/)
+      })
+
+      it('the journal_entry_id foreign key rejects a reference to a nonexistent entry', () => {
+        expect(() => insertBaseLine('does-not-exist')).toThrow(/FOREIGN KEY constraint failed/)
+      })
+
+      it('the account_id foreign key rejects a reference to a nonexistent account', () => {
+        const entryId = insertBaseJournalEntry()
+        expect(() => insertBaseLine(entryId, { account_id: 'does-not-exist' })).toThrow(
+          /FOREIGN KEY constraint failed/
+        )
+      })
+
+      it('the company_id foreign key rejects a reference to a nonexistent company', () => {
+        const standaloneRawDb = createDatabaseConnection(join(dir, 'standalone-je-company-fk.db'))
+        runMigrations(standaloneRawDb, REAL_MIGRATIONS_FOLDER)
+        seedReferenceData(standaloneRawDb)
+        expect(() =>
+          standaloneRawDb
+            .prepare(
+              `INSERT INTO journal_entries
+               (id, company_id, entry_number, entry_date, description, currency_id, created_by_user_id, created_at)
+               VALUES ('je_x', 'primary_company', 'JE-000001', ?, 'X', 'currency_usd', 'does-not-exist-user', ?)`
+            )
+            .run(Date.now(), Date.now())
+        ).toThrow(/FOREIGN KEY constraint failed/)
+        standaloneRawDb.close()
+      })
+    })
+  })
+
+  describe('no pre-existing migration was modified', () => {
+    it('migrations 0000-0009 remain byte-identical to their state at the imported m1-slice-15 baseline', () => {
+      const filesToCheck = [
+        'migrations/0000_reference_data_tables.sql',
+        'migrations/0001_company_and_numbering_rules.sql',
+        'migrations/0002_tax_configuration.sql',
+        'migrations/0003_authentication_foundations.sql',
+        'migrations/0004_audit_logging.sql',
+        'migrations/0005_products_and_variants.sql',
+        'migrations/0006_inventory_items.sql',
+        'migrations/0007_suppliers.sql',
+        'migrations/0008_customers.sql',
+        'migrations/0009_inventory_lots.sql'
+      ]
+
+      const diffOutput = execFileSync('git', ['diff', 'm1-slice-15', '--', ...filesToCheck], {
         cwd: process.cwd(),
         encoding: 'utf-8'
       })

@@ -17,6 +17,8 @@ import { registerProductHandlers } from './ipc/registerProductHandlers'
 import { registerInventoryItemHandlers } from './ipc/registerInventoryItemHandlers'
 import { registerSupplierHandlers } from './ipc/registerSupplierHandlers'
 import { registerCustomerHandlers } from './ipc/registerCustomerHandlers'
+import { registerInventoryLotHandlers } from './ipc/registerInventoryLotHandlers'
+import { registerAccountingHandlers } from './ipc/registerAccountingHandlers'
 import { initializeDatabase } from './db/initializeDatabase'
 import { resolveMigrationsFolder } from './db/resolveMigrationsFolder'
 import { showStartupErrorAndQuit } from './startup/showStartupError'
@@ -168,6 +170,18 @@ if (isPrimaryInstance) {
     // registerCustomerHandlers.ts) never trusts anything the renderer
     // supplies, including session.canViewCustomers/canManageCustomers.
     registerCustomerHandlers({ context: navigationContext, db: drizzleDb, loginService })
+    // Slice 15's own IPC surface is entirely read-only -- no mutation
+    // channel exists here or anywhere else in this codebase for
+    // createOpeningLot/recordAdjustment/reserveStock/
+    // releaseReservation/reverseMovement/consumeStock/
+    // setLotQuarantined/setLotActive.
+    registerInventoryLotHandlers({ context: navigationContext, db: drizzleDb, loginService })
+    // Slice 16's own IPC surface covers both reads and manual
+    // mutations (account/journal creation, journal reversal) -- unlike
+    // Slice 15's entirely read-only surface -- but still has no
+    // update/delete path for journal entries or lines, and no
+    // automatic/operational posting mechanism (Slice 17's own scope).
+    registerAccountingHandlers({ context: navigationContext, db: drizzleDb, loginService })
 
     // Idle-lock timer: started once here, for the app's lifetime, disposed
     // in before-quit below. Locks (never destroys) the current session

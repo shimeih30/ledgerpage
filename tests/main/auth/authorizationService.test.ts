@@ -24,7 +24,12 @@ const EXPECTED_MATRIX: Record<(typeof ROLE_CODES)[number], readonly string[]> = 
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'inventory_lots.manage',
+    'inventory_lots.override',
+    'accounts.read',
+    'journal_entries.read'
   ],
   operations: [
     'numbering.read',
@@ -35,7 +40,9 @@ const EXPECTED_MATRIX: Record<(typeof ROLE_CODES)[number], readonly string[]> = 
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'inventory_lots.manage'
   ],
   finance: [
     'company.read',
@@ -48,7 +55,12 @@ const EXPECTED_MATRIX: Record<(typeof ROLE_CODES)[number], readonly string[]> = 
     'suppliers.read',
     'suppliers.manage',
     'customers.read',
-    'customers.manage'
+    'customers.manage',
+    'inventory_lots.read',
+    'accounts.read',
+    'accounts.manage',
+    'journal_entries.read',
+    'journal_entries.manage'
   ]
 }
 
@@ -73,7 +85,14 @@ describe('authorizationService', () => {
       'suppliers.read',
       'suppliers.manage',
       'customers.read',
-      'customers.manage'
+      'customers.manage',
+      'inventory_lots.read',
+      'inventory_lots.manage',
+      'inventory_lots.override',
+      'accounts.read',
+      'accounts.manage',
+      'journal_entries.read',
+      'journal_entries.manage'
     ])
   })
 

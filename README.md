@@ -658,6 +658,309 @@ later refinement); outstanding-balance display and any credit
 enforcement (Slice 23); any accounting posting; and any customer tax
 field, since none is named in the approved scope.
 
+### Inventory lots & FIFO costing
+
+The fifth master-data-adjacent module, and the first to introduce a
+transactional ledger rather than simple reference data: `inventory_lots`
+(one row per physical receipt of stock) and `stock_movements` (an
+append-only history of every quantity/cost/reservation change against a
+lot). This is infrastructure for FIFO costing — it posts nothing to the
+accounting ledger on its own, since Accounting Foundations doesn't exist
+until Slices 16-17.
+
+**Scaled-integer quantity model.** Every physical quantity is stored as
+an integer, scaled by the inventory item's own base unit's
+`decimalPlaces` (`quantityScale = 10 ^ decimalPlaces`) — mirroring
+money's own integer-minor-units convention exactly, just with a
+per-unit scale instead of a fixed 2 decimal places. "1.500 kg" at 3
+decimal places is the integer `1500`; there is no floating-point
+physical-quantity storage anywhere in this codebase. Parsing a raw
+decimal string never uses `Number(value) * scale` — confirmed directly
+that ordinary IEEE 754 arithmetic does not round-trip exactly for many
+decimal fractions (e.g. `0.29 * 100 === 28.999999999999996`).
+`quantityScale.ts`'s own `parseQuantityToScaledInteger` instead extracts
+whole and fractional digit strings via a regex anchored to the unit's
+exact allowed decimal length, then concatenates and parses them as a
+single integer — exact digit-string arithmetic, never a floating-point
+multiplication.
+
+**Lots.** `internalLotNumber` is system-generated via the newly-approved
+`inventory_lot` numbering rule (`LOT`, never-reset, 6-digit padding),
+immutable thereafter. `currencyId` is always `FUNCTIONAL_CURRENCY_ID`,
+assigned server-side, mirroring every other money-bearing table's own
+precedent. `expiryDate` is required exactly when the parent item has
+`expiryTracked=true`, and rejected outright (not silently dropped) when
+provided but not applicable. `createOpeningLot` is service-layer-only in
+this slice — there is no IPC channel, preload method, or renderer UI
+that can create a lot; opening stock is established internally, for
+later slices (Purchasing, Production) to call in-process. Persisted
+`lifecycleStatus` is one of exactly three values: `active`,
+`quarantined`, `depleted`. A lot's _effective_ status additionally folds
+in `expired` — computed at read time from `expiryDate` vs. the current
+moment, never stored, since whether a lot is expired as of right now is
+a function of the clock, not a fact to persist and let go stale; no
+database row is ever updated merely because time passed.
+
+**Movements are append-only.** No update or delete path exists anywhere
+in this codebase for `stock_movements`, structurally as well as by
+convention — corrections are new movements (adjustments or reversals),
+never edits to a prior row. A movement's `reversedMovementId` links a
+reversal to the exact movement it undoes; a movement can be reversed
+**once only**, enforced both by an explicit service-layer pre-check and
+by the database's own unique constraint on `reversed_movement_id` as a
+second line of defense (SQLite treats every `NULL` as distinct from
+every other `NULL`, so non-reversal rows are unlimited while any one
+movement is still capped to a single reversal). A reversal applies the
+**exact negation** of the original movement's physical, reserved, and
+cost deltas.
+
+**Negative stock is never permitted** — physical quantity, reserved
+quantity, and available quantity (physical − reserved) can never go
+below zero, for any movement type, enforced at the service layer (the
+actual guard) and backed by the database's own CHECK constraints as a
+second line of defense. Reservations only ever increase `reserved`;
+they never alter physical quantity. Releases only ever decrease
+`reserved`; they never increase physical quantity. A reservation can
+never exceed a lot's currently-usable physical quantity (physical minus
+already-outstanding reservations on that lot).
+
+**Cached balances, transactionally maintained.** Each lot's own
+`quantityRemainingScaled`/`costRemainingMinor` columns are updated in
+the exact same database transaction as the movement row that changes
+them — there is no code path anywhere in this codebase that writes
+either cached field without inserting the corresponding movement in
+that same transaction. This is independently verified, not merely
+asserted: `stockLedgerReconciliation.test.ts` reconstructs every lot's
+balance directly from raw `stock_movements` rows (never trusting
+`stockQuantityService`'s own derived output) and proves the cached
+columns exactly equal the reconstruction:
+
+```
+quantityRemainingScaled = SUM(stock_movements.physicalQuantityDeltaScaled)
+costRemainingMinor      = SUM(stock_movements.costDeltaMinor)
+available               = physical - reserved
+```
+
+**FIFO consumption.** `fifoConsumptionService.ts` selects lots
+oldest-first by a fixed, deterministic order — `receivedDate ASC,
+createdAt ASC, id ASC` — skipping quarantined and expired lots unless an
+authorized override with a reason is supplied. Cost allocation uses
+exact integer arithmetic throughout: a lot's full depletion consumes its
+entire `costRemainingMinor` exactly (never a rounded proportional
+figure that could leave a stray remainder); a partial draw computes
+`round(costRemainingMinor * quantityDrawn / quantityRemainingScaled)` —
+one deliberate, singular currency-rounding step, confirmed by a
+dedicated test to conserve cost exactly across multiple unequal partial
+draws from the same lot, not only the trivial single-draw case. The
+worked acceptance example — 20.000 kg received at $3.50/kg, then 50.000
+kg at $4.20/kg, consuming 30.000 kg — draws 20.000 kg ($70.00) from the
+first lot and 10.000 kg ($42.00) from the second, totalling exactly
+**US$112.00**, verified byte-exact by its own test.
+
+**Authorization** introduces a three-tier matrix distinct from every
+prior domain: `inventory_lots.read`, `inventory_lots.manage`, and
+`inventory_lots.override` as three separate actions, so a role can
+manage lots without being able to bypass the expired/quarantined
+consumption guard. Owner and Executive receive all three. Operations
+receives read/manage but **not** override. Finance receives **read
+only** — unlike Suppliers/Customers, stock lots are physical-inventory
+mechanics, not financial master data Finance directly manages.
+Expired/quarantined-lot consumption requires both an authorized override
+role and a non-blank reason; this is enforced at the FIFO consumption
+service's own input validation, with the calling layer responsible for
+confirming the actor actually holds `inventory_lots.override` before
+ever constructing that input. `canViewInventoryLots`/
+`canManageInventoryLots`/`canOverrideInventoryLots` are cosmetic-only
+session flags, exactly like every prior `canView*`/`canManage*` pair.
+
+**IPC and renderer are entirely read-only in this slice.**
+`registerInventoryLotHandlers.ts` registers exactly 5 channels
+(`inventory-lots:list-for-item`, `inventory-lots:get`,
+`inventory-lots:list-movements`, `stock:list-summaries`,
+`stock:get-summary`), every one gated by `requireAuthorizedCaller`
+against `inventory_lots.read`, resolved fresh from SQLite on every call.
+No mutation channel, handler, preload method, or renderer-global method
+exists for `createOpeningLot`, `recordAdjustment`, `reserveStock`,
+`releaseReservation`, `reverseMovement`, `consumeStock`,
+`setLotQuarantined`, or `setLotActive` — confirmed structurally by
+dedicated tests at every layer (the shared contract's own runtime
+exports, the registered IPC channels, the built preload output, and the
+exposed renderer-global surface), not merely by omission.
+
+Renderer navigation is three screens deep: **`StockOnHandScreen`**
+(client-side, case-insensitive search over item code/name; a stock
+summary row represents an item, potentially with several lots) →
+**`InventoryItemLotsScreen`** (every lot for the selected item, in FIFO
+order, so the reader chooses which lot to open rather than the app
+silently guessing) → **`InventoryLotDetailScreen`** (full lot metadata,
+derived effective status, and its append-only movement history,
+preserving IPC order exactly). `incoming` is always zero in this slice —
+a stub for the field Slice 18 (Purchasing) will eventually populate,
+never derived from movements.
+
+**Intentionally excluded from this slice:** purchasing, manufacturing,
+and sales integration (goods receipts, production consumption, and
+sales fulfillment all remain internal-service-only until their own
+slices); any accounting posting; unit conversions; reorder-point
+calculations; and any stock mutation UI of any kind — this slice's own
+renderer and IPC surface is, by design, read-only from end to end.
+
+### Accounting foundations
+
+Double-entry bookkeeping foundations: a chart of accounts and a
+manually-entered, immediately-posted, balanced general ledger. This is
+the first accounting-domain slice, and the first slice whose own IPC
+surface mixes reads with genuine manual mutations (account creation,
+journal posting, journal reversal) rather than being either entirely
+read-only (Slice 15) or read/write from day one for every table — the
+mixture here is gated by authorization, not by the surface itself.
+Nothing here posts automatically from any operational module yet; that
+reusable mechanism is Slice 17's own scope, and each transactional
+slice from Slice 18 onward will wire its own posting rule into it.
+
+**Chart of accounts.** Every account has exactly one of six categories
+— `asset`, `liability`, `equity`, `revenue`, `cost_of_goods_sold`,
+`expense` — fixed for the life of the account; `category` is never
+editable once created, since an account's fundamental accounting nature
+is not something a later edit should be able to silently change out
+from under existing journal history. `normalBalance` (`debit` or
+`credit`) is derived purely from `category` at read time, never stored
+as its own column — storing it separately would create a second source
+of truth that could drift. `code` is caller-supplied, immutable, and
+4–10 ASCII digits — a deliberate departure from every prior
+master-data entity in this codebase (customers, suppliers, products,
+inventory lots), all of which use the system-generated numbering-rule
+mechanism instead. A small, deliberately-curated chart of accounts
+doesn't benefit from an auto-incrementing sequence the way high-volume
+records do, and conventional accounting codes (1000 = cash, 2000 =
+liabilities, and so on) carry meaning a numbering rule would obscure.
+`name` and the optional `subtype` remain editable at any time. Deactivation
+is soft only — no delete/remove function exists anywhere in this
+codebase for an account — and an inactive account remains fully
+readable (in the chart itself, in historical journal lines, and in the
+trial balance) but cannot receive a _new_ manual posting; an account
+that becomes inactive after a journal entry was posted never blocks
+that entry's own eventual reversal, mirroring `reverseMovement`'s own
+precedent from Slice 15 exactly (undoing a past action must work even
+after later, unrelated deactivation).
+
+**Starter chart, seeded idempotently.** Thirteen accounts — 1000 Cash
+on Hand, 1010 Primary Bank, 1020 Mobile Money, 1030 Petty Cash, 1040
+Undeposited Funds, 1100 Accounts Receivable, 1200 Inventory, 2000
+Accounts Payable, 3000 Owner's Equity, 3100 Retained Earnings, 4000
+Sales Revenue, 5000 Cost of Goods Sold, 6000 General Expenses — seeded
+at zero balance, for both new first-run companies and existing
+companies upgrading from an earlier slice. `ensureStarterChartOfAccounts`
+only ever inserts a starter code that doesn't already exist; a
+pre-existing account (starter or user-created) sharing a starter code is
+never overwritten. No opening-balance journal entry is created while
+seeding — an account existing with a zero cached balance is not itself
+a financial fact requiring a journal entry. Opening balances, if and
+when a company needs to record them, are ordinary manual journal
+entries created afterward, exactly like any other entry — there is no
+dedicated opening-balance mechanism anywhere in this slice.
+
+**Journal entries are created posted immediately** — there is no
+draft/status column anywhere in this schema, and no draft-creation or
+approval API exists. A journal entry must have at least two lines; each
+line has exactly one positive side (debit XOR credit, never both, never
+neither), enforced identically at the service layer and by the
+database's own CHECK constraint as a second line of defense; the same
+account may legitimately appear on more than one line of the same
+entry (e.g. two separate debits to the same expense account for two
+different underlying reasons) — this is standard double-entry practice,
+not an oversight. Total debits must exactly equal total credits, and
+both totals must be strictly greater than zero. All amounts are integer
+minor currency units, never floating point — `journalDecimal.ts`'s own
+renderer-side parser extracts whole/fractional digit strings and
+concatenates them into a single integer, the same digit-string approach
+`quantityScale.ts`/`parseDecimalToMinorUnits` established in Slices 15
+and earlier, never `Number(value) * 100` (confirmed directly that
+`0.29 * 100 === 28.999999999999996` in IEEE 754 double precision).
+`currency_id` is always `FUNCTIONAL_CURRENCY_ID`, assigned server-side
+— multi-currency posting is out of scope for this slice.
+
+**Posted journals are immutable — corrections are always a new,
+exact-opposite reversal entry**, never an edit, mirroring
+`stock_movements`' own append-only/reversal-once-only precedent
+exactly. No update or delete path exists anywhere in this codebase for
+a journal entry or a journal line. A reversal entry has every line's
+debit and credit exactly swapped from the original, with account,
+line order, and line description all preserved; a non-blank reason is
+always required. An entry can be reversed once only, enforced both by
+an explicit service-layer pre-check and by the database's own unique
+constraint on `reversed_entry_id` as a second line of defense. A
+reversal entry can never itself be reversed. Reversal does not require
+every referenced account to currently be active — undoing a past
+action must work even after a later, unrelated account deactivation —
+whereas a brand-new manual posting does require every referenced
+account to be active.
+
+**Trial balance, reconstructed on every call.** No cached balance
+column exists anywhere for this purpose; `getTrialBalance` sums
+`journal_entry_lines.debitMinor`/`creditMinor` directly, grouped by
+account, on every single call. Every account is included, even one
+with zero activity or one that is currently inactive; each row exposes
+both a running total (`totalDebitMinor`/`totalCreditMinor`) and a
+netted closing presentation (`closingDebitMinor`/`closingCreditMinor`
+— whichever side is larger after netting the two totals, matching
+conventional trial-balance presentation). This is an all-time balance
+as of right now — there is no date range, no accounting-period
+parameter, and no period-locking concept anywhere in this slice.
+
+**Authorization introduces the first domain where Executive does not
+mirror Owner.** `accounts.read`, `accounts.manage`, `journal_entries.read`,
+and `journal_entries.manage` as four separate actions. Owner and
+Finance receive all four — Finance _is_ the accounting-authoritative
+role in this domain, unlike its read-only posture on Stock in Slice 15.
+Executive receives the two `.read` actions only, explicitly excluded
+from every manage action — a deliberate departure from every prior
+domain in this codebase, where Executive has always received full
+parity with Owner. Operations receives none of the four — the first
+domain Operations is excluded from entirely, reflecting that
+double-entry bookkeeping is not an Operations concern the way
+products/inventory/suppliers/customers are.
+
+**IPC surface: 11 channels**, split across accounts
+(list/get/create/update/deactivate/reactivate) and journal entries
+(list/get/create/reverse), plus one for the trial balance. Every
+handler is gated by `requireAuthorizedCaller` against the matching
+action, resolved fresh from SQLite on every call. The audit actor and
+`createdByUserId` are always computed from the authenticated caller —
+never from any renderer-supplied `actor`/`actorId`/`createdByUserId`
+field, since the input parsers never even read such a field from the
+raw IPC payload. `SafeJournalEntry` includes a server-computed
+`hasBeenReversed` flag (whether some other entry's own
+`reversedEntryId` points back at this one) precisely because the
+renderer must never infer this client-side from a partial view of the
+data — this is the mechanism `JournalEntryDetailScreen` uses to decide
+whether its own reversal control should be visible at all.
+
+**Renderer navigation** is a sub-nav within the shell's own Accounting
+section — Chart of Accounts, Journal Entries, Trial Balance — with
+Journal Entries itself drilling into create/detail sub-screens (create
+→ detail on success; detail → journals on Back). `ChartOfAccountsScreen`
+never applies an optimistic update on any mutation; every
+create/update/deactivate/reactivate re-fetches the authoritative list
+afterward. `ManualJournalEntryScreen` starts with exactly two lines
+(a floor no Remove control can go below), restricts the account picker
+to active accounts only, and shows a live balanced/out-of-balance
+indicator computed from the same exact-integer arithmetic the create
+payload itself will use. `JournalEntryDetailScreen`'s reversal control
+requires all three of: manage authorization, this entry not itself
+being a reversal, and this entry not having already been reversed.
+
+**Intentionally excluded from this slice:** automatic/operational
+posting from any other module (Slice 17's own scope); accounting
+periods and period locking; multi-currency ledger entries; profit &
+loss, balance sheet, and general-ledger detail reports (a later
+reporting tier); tax-account mapping; supplier/customer subledgers;
+account hierarchy _behavior_ (the `parent_account_id` column exists in
+neither this slice's schema nor a later one yet — hierarchy display and
+rollup remain deferred); and any dedicated opening-balance workflow —
+opening balances are, deliberately, nothing more than an ordinary
+manual journal entry.
+
 ### First-run setup wizard
 
 The M1 implementation plan describes Slice 8 as the point where the real

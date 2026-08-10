@@ -69,7 +69,23 @@ const EXPECTED_KEYS = [
   'createCustomerContact',
   'updateCustomerContact',
   'deactivateCustomerContact',
-  'reactivateCustomerContact'
+  'reactivateCustomerContact',
+  'listInventoryLotsForItem',
+  'getInventoryLot',
+  'listInventoryLotMovements',
+  'listStockSummaries',
+  'getStockSummary',
+  'listAccounts',
+  'getAccount',
+  'createAccount',
+  'updateAccount',
+  'deactivateAccount',
+  'reactivateAccount',
+  'listJournalEntries',
+  'getJournalEntry',
+  'createJournalEntry',
+  'reverseJournalEntry',
+  'getTrialBalance'
 ]
 
 describe('preload API surface', () => {
@@ -547,5 +563,204 @@ describe('preload API surface', () => {
     await api.deactivateCustomerContact(input)
 
     expect(invoke).toHaveBeenCalledWith(CUSTOMER_CONTACTS_DEACTIVATE_CHANNEL, input)
+  })
+
+  it('listInventoryLotsForItem forwards its input to the inventory-lots:list-for-item channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL } =
+      await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: true, lots: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listInventoryLotsForItem: (input: unknown) => Promise<unknown>
+    }
+    const input = { inventoryItemId: 'inventory_item_1' }
+    const result = await api.listInventoryLotsForItem(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_LOTS_LIST_FOR_ITEM_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('getInventoryLot forwards its input to the inventory-lots:get channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_LOTS_GET_CHANNEL } = await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: false, errorCode: 'not_found' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      getInventoryLot: (input: unknown) => Promise<unknown>
+    }
+    const input = { lotId: 'inventory_lot_1' }
+    const result = await api.getInventoryLot(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_LOTS_GET_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('listInventoryLotMovements forwards its input to the inventory-lots:list-movements channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL } =
+      await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: true, movements: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listInventoryLotMovements: (input: unknown) => Promise<unknown>
+    }
+    const input = { lotId: 'inventory_lot_1' }
+    const result = await api.listInventoryLotMovements(input)
+
+    expect(invoke).toHaveBeenCalledWith(INVENTORY_LOTS_LIST_MOVEMENTS_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('listStockSummaries invokes exactly the stock:list-summaries channel, with no arguments, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { STOCK_LIST_SUMMARIES_CHANNEL } = await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: true, summaries: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      listStockSummaries: () => Promise<unknown>
+    }
+    const result = await api.listStockSummaries()
+
+    expect(invoke).toHaveBeenCalledWith(STOCK_LIST_SUMMARIES_CHANNEL)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('getStockSummary forwards its input to the stock:get-summary channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { STOCK_GET_SUMMARY_CHANNEL } = await import('../../src/shared/ipc/inventoryLots')
+
+    const expectedResult = { success: false, errorCode: 'not_found' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      getStockSummary: (input: unknown) => Promise<unknown>
+    }
+    const input = { inventoryItemId: 'inventory_item_1' }
+    const result = await api.getStockSummary(input)
+
+    expect(invoke).toHaveBeenCalledWith(STOCK_GET_SUMMARY_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('listAccounts invokes exactly the accounts:list channel, with no arguments, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { ACCOUNTS_LIST_CHANNEL } = await import('../../src/shared/ipc/accounting')
+
+    const expectedResult = { success: true, accounts: [] }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as { listAccounts: () => Promise<unknown> }
+    const result = await api.listAccounts()
+
+    expect(invoke).toHaveBeenCalledWith(ACCOUNTS_LIST_CHANNEL)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('createAccount forwards its input to the accounts:create channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { ACCOUNTS_CREATE_CHANNEL } = await import('../../src/shared/ipc/accounting')
+
+    const expectedResult = { success: false, errorCode: 'duplicate_code' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createAccount: (input: unknown) => Promise<unknown>
+    }
+    const input = { code: '7000', name: 'Test', category: 'expense' }
+    const result = await api.createAccount(input)
+
+    expect(invoke).toHaveBeenCalledWith(ACCOUNTS_CREATE_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('updateAccount forwards its input to the accounts:update channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { ACCOUNTS_UPDATE_CHANNEL } = await import('../../src/shared/ipc/accounting')
+
+    const expectedResult = { success: false, errorCode: 'not_found' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      updateAccount: (input: unknown) => Promise<unknown>
+    }
+    const input = { id: 'account_1', name: 'Renamed' }
+    const result = await api.updateAccount(input)
+
+    expect(invoke).toHaveBeenCalledWith(ACCOUNTS_UPDATE_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('createJournalEntry forwards its input to the journal-entries:create channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { JOURNAL_ENTRIES_CREATE_CHANNEL } = await import('../../src/shared/ipc/accounting')
+
+    const expectedResult = { success: false, errorCode: 'unbalanced_entry' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      createJournalEntry: (input: unknown) => Promise<unknown>
+    }
+    const input = {
+      entryDate: Date.now(),
+      description: 'X',
+      lines: [
+        { accountId: 'account_1', debitMinor: 100, creditMinor: 0 },
+        { accountId: 'account_2', debitMinor: 0, creditMinor: 100 }
+      ]
+    }
+    const result = await api.createJournalEntry(input)
+
+    expect(invoke).toHaveBeenCalledWith(JOURNAL_ENTRIES_CREATE_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('reverseJournalEntry forwards its input to the journal-entries:reverse channel unchanged, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { JOURNAL_ENTRIES_REVERSE_CHANNEL } = await import('../../src/shared/ipc/accounting')
+
+    const expectedResult = { success: false, errorCode: 'already_reversed' }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      reverseJournalEntry: (input: unknown) => Promise<unknown>
+    }
+    const input = { journalEntryId: 'journal_entry_1', reversalReason: 'Undo' }
+    const result = await api.reverseJournalEntry(input)
+
+    expect(invoke).toHaveBeenCalledWith(JOURNAL_ENTRIES_REVERSE_CHANNEL, input)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
+  })
+
+  it('getTrialBalance invokes exactly the trial-balance:get channel, with no arguments, exactly once, and passes the result through unchanged', async () => {
+    await import('../../src/preload/index')
+    const { TRIAL_BALANCE_GET_CHANNEL } = await import('../../src/shared/ipc/accounting')
+
+    const expectedResult = {
+      success: true,
+      trialBalance: {
+        accounts: [],
+        grandTotalDebitMinor: 0,
+        grandTotalCreditMinor: 0,
+        isBalanced: true
+      }
+    }
+    invoke.mockResolvedValueOnce(expectedResult)
+    const api = exposeInMainWorld.mock.calls[0][1] as {
+      getTrialBalance: () => Promise<unknown>
+    }
+    const result = await api.getTrialBalance()
+
+    expect(invoke).toHaveBeenCalledWith(TRIAL_BALANCE_GET_CHANNEL)
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(result).toBe(expectedResult)
   })
 })

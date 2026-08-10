@@ -9,6 +9,14 @@ import { SupplierListScreen } from '../suppliers/SupplierListScreen'
 import { SupplierDetailScreen } from '../suppliers/SupplierDetailScreen'
 import { CustomerListScreen } from '../customers/CustomerListScreen'
 import { CustomerDetailScreen } from '../customers/CustomerDetailScreen'
+import { StockOnHandScreen } from '../inventory/StockOnHandScreen'
+import { InventoryItemLotsScreen } from '../inventory/InventoryItemLotsScreen'
+import { InventoryLotDetailScreen } from '../inventory/InventoryLotDetailScreen'
+import { ChartOfAccountsScreen } from '../accounting/ChartOfAccountsScreen'
+import { JournalEntriesScreen } from '../accounting/JournalEntriesScreen'
+import { ManualJournalEntryScreen } from '../accounting/ManualJournalEntryScreen'
+import { JournalEntryDetailScreen } from '../accounting/JournalEntryDetailScreen'
+import { TrialBalanceScreen } from '../accounting/TrialBalanceScreen'
 import { colors, fonts } from '../setup/ui'
 import type { SafeSessionInfo } from '../../../shared/ipc/login'
 
@@ -17,7 +25,16 @@ interface AuthenticatedShellProps {
   onLoggedOut: () => void
 }
 
-type View = 'home' | 'users' | 'audit' | 'products' | 'inventory-items' | 'suppliers' | 'customers'
+type View =
+  | 'home'
+  | 'users'
+  | 'audit'
+  | 'products'
+  | 'inventory-items'
+  | 'suppliers'
+  | 'customers'
+  | 'stock'
+  | 'accounting'
 
 /**
  * Local navigation within the Products area only — list/create/detail —
@@ -59,6 +76,30 @@ type CustomersRoute =
   { screen: 'list' } | { screen: 'create' } | { screen: 'detail'; customerId: string }
 
 /**
+ * Same local-routing posture as the other routes above, but with no
+ * 'create' screen at all — this slice's own approved architecture is
+ * entirely read-only, so there is no create/edit route for stock.
+ */
+type StockRoute =
+  | { screen: 'list' }
+  | { screen: 'item-lots'; inventoryItemId: string; itemCode: string; itemName: string }
+  | { screen: 'lot-detail'; lotId: string }
+
+/**
+ * Local navigation within the Accounting area only — kept entirely
+ * inside this shell, no routing library, mirroring StockRoute's own
+ * exact precedent. The Accounting nav itself lands on 'accounts'
+ * (Chart of Accounts) as the default landing page; 'journals' is
+ * reached via its own nav button.
+ */
+type AccountingRoute =
+  | { screen: 'accounts' }
+  | { screen: 'journals' }
+  | { screen: 'journal-create' }
+  | { screen: 'journal-detail'; journalEntryId: string }
+  | { screen: 'trial-balance' }
+
+/**
  * The authenticated application area. The "Users & Roles" link is
  * rendered only when `session.isOwner` is true, and the "Audit Log"
  * link only when `session.canViewAuditLog` is true — both purely
@@ -77,6 +118,20 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
   })
   const [suppliersRoute, setSuppliersRoute] = useState<SuppliersRoute>({ screen: 'list' })
   const [customersRoute, setCustomersRoute] = useState<CustomersRoute>({ screen: 'list' })
+  const [stockRoute, setStockRoute] = useState<StockRoute>({ screen: 'list' })
+  /**
+   * Tracks which item-lots screen a lot-detail view was opened from,
+   * so Back from lot detail returns to that same item's lot list
+   * (preserving the selected item context) rather than jumping all
+   * the way back to the top-level Stock list. The lot-detail route
+   * itself only carries a lotId, not the originating item, so this is
+   * tracked separately -- a small, local breadcrumb, not a routing
+   * library.
+   */
+  const [lastItemLotsContext, setLastItemLotsContext] = useState<
+    { inventoryItemId: string; itemCode: string; itemName: string } | undefined
+  >(undefined)
+  const [accountingRoute, setAccountingRoute] = useState<AccountingRoute>({ screen: 'accounts' })
 
   async function handleLogout(): Promise<void> {
     try {
@@ -233,6 +288,46 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
               Customers
             </button>
           )}
+          {session.canViewInventoryLots && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('stock')
+                setStockRoute({ screen: 'list' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'stock' ? 700 : 500
+              }}
+            >
+              Stock
+            </button>
+          )}
+          {session.canViewAccounts && (
+            <button
+              type="button"
+              onClick={() => {
+                setView('accounting')
+                setAccountingRoute({ screen: 'accounts' })
+              }}
+              style={{
+                fontSize: '0.875rem',
+                color: colors.accent,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                fontWeight: view === 'accounting' ? 700 : 500
+              }}
+            >
+              Accounting
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleLogout()}
@@ -346,6 +441,128 @@ export function AuthenticatedShell({ session, onLoggedOut }: AuthenticatedShellP
           onBack={() => setCustomersRoute({ screen: 'list' })}
           onSaved={(customerId) => setCustomersRoute({ screen: 'detail', customerId })}
         />
+      )}
+      {view === 'stock' && stockRoute.screen === 'list' && (
+        <StockOnHandScreen
+          onOpenItemLots={(inventoryItemId, itemCode, itemName) =>
+            setStockRoute({ screen: 'item-lots', inventoryItemId, itemCode, itemName })
+          }
+        />
+      )}
+      {view === 'stock' && stockRoute.screen === 'item-lots' && (
+        <InventoryItemLotsScreen
+          inventoryItemId={stockRoute.inventoryItemId}
+          itemCode={stockRoute.itemCode}
+          itemName={stockRoute.itemName}
+          onBack={() => setStockRoute({ screen: 'list' })}
+          onOpenLot={(lotId) => {
+            setLastItemLotsContext({
+              inventoryItemId: stockRoute.inventoryItemId,
+              itemCode: stockRoute.itemCode,
+              itemName: stockRoute.itemName
+            })
+            setStockRoute({ screen: 'lot-detail', lotId })
+          }}
+        />
+      )}
+      {view === 'stock' && stockRoute.screen === 'lot-detail' && (
+        <InventoryLotDetailScreen
+          lotId={stockRoute.lotId}
+          onBack={() =>
+            setStockRoute(
+              lastItemLotsContext
+                ? { screen: 'item-lots', ...lastItemLotsContext }
+                : { screen: 'list' }
+            )
+          }
+        />
+      )}
+      {view === 'accounting' && (
+        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+          <button
+            type="button"
+            onClick={() => setAccountingRoute({ screen: 'accounts' })}
+            style={{
+              fontSize: '0.8125rem',
+              color: colors.accent,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              fontWeight: accountingRoute.screen === 'accounts' ? 700 : 500
+            }}
+          >
+            Chart of Accounts
+          </button>
+          <button
+            type="button"
+            onClick={() => setAccountingRoute({ screen: 'journals' })}
+            style={{
+              fontSize: '0.8125rem',
+              color: colors.accent,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              fontWeight:
+                accountingRoute.screen === 'journals' ||
+                accountingRoute.screen === 'journal-create' ||
+                accountingRoute.screen === 'journal-detail'
+                  ? 700
+                  : 500
+            }}
+          >
+            Journal Entries
+          </button>
+          <button
+            type="button"
+            onClick={() => setAccountingRoute({ screen: 'trial-balance' })}
+            style={{
+              fontSize: '0.8125rem',
+              color: colors.accent,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+              fontWeight: accountingRoute.screen === 'trial-balance' ? 700 : 500
+            }}
+          >
+            Trial Balance
+          </button>
+        </div>
+      )}
+      {view === 'accounting' && accountingRoute.screen === 'accounts' && (
+        <ChartOfAccountsScreen canManageAccounts={session.canManageAccounts} />
+      )}
+      {view === 'accounting' && accountingRoute.screen === 'journals' && (
+        <JournalEntriesScreen
+          canManageJournalEntries={session.canManageJournalEntries}
+          onOpenJournalEntry={(journalEntryId) =>
+            setAccountingRoute({ screen: 'journal-detail', journalEntryId })
+          }
+          onCreateJournalEntry={() => setAccountingRoute({ screen: 'journal-create' })}
+        />
+      )}
+      {view === 'accounting' && accountingRoute.screen === 'journal-create' && (
+        <ManualJournalEntryScreen
+          onCreated={(journalEntryId) =>
+            setAccountingRoute({ screen: 'journal-detail', journalEntryId })
+          }
+          onCancel={() => setAccountingRoute({ screen: 'journals' })}
+        />
+      )}
+      {view === 'accounting' && accountingRoute.screen === 'journal-detail' && (
+        <JournalEntryDetailScreen
+          journalEntryId={accountingRoute.journalEntryId}
+          canManageJournalEntries={session.canManageJournalEntries}
+          onReversed={(reversalEntryId) =>
+            setAccountingRoute({ screen: 'journal-detail', journalEntryId: reversalEntryId })
+          }
+          onBack={() => setAccountingRoute({ screen: 'journals' })}
+        />
+      )}
+      {view === 'accounting' && accountingRoute.screen === 'trial-balance' && (
+        <TrialBalanceScreen />
       )}
       {view === 'home' && (
         <main

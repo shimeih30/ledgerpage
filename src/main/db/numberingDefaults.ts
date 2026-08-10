@@ -19,7 +19,9 @@ export const APPROVED_DOCUMENT_TYPE_KEYS = [
   'production_batch',
   'customer',
   'supplier',
-  'product'
+  'product',
+  'inventory_lot',
+  'journal_entry'
 ] as const
 
 export type DocumentTypeKey = (typeof APPROVED_DOCUMENT_TYPE_KEYS)[number]
@@ -34,10 +36,11 @@ export interface NumberingRuleDefault {
 }
 
 /**
- * The 10 approved defaults, in the order given in the frozen plan. Every
- * entry uses 6-digit padding, per the approved rule that padding is
- * uniform across all document types (including never-reset ones —
- * CUS-000001, not CUS-00001).
+ * The 12 approved defaults, in the order given in the frozen plan (11
+ * previously, plus `journal_entry` approved for Slice 16). Every entry
+ * uses 6-digit padding, per the approved rule that padding is uniform
+ * across all document types (including never-reset ones — CUS-000001,
+ * not CUS-00001).
  */
 export const APPROVED_NUMBERING_DEFAULTS: readonly NumberingRuleDefault[] = [
   { documentTypeKey: 'quotation', prefix: 'QT', resetBehavior: 'yearly', paddingLength: 6 },
@@ -49,7 +52,9 @@ export const APPROVED_NUMBERING_DEFAULTS: readonly NumberingRuleDefault[] = [
   { documentTypeKey: 'production_batch', prefix: 'BAT', resetBehavior: 'yearly', paddingLength: 6 },
   { documentTypeKey: 'customer', prefix: 'CUS', resetBehavior: 'never', paddingLength: 6 },
   { documentTypeKey: 'supplier', prefix: 'SUP', resetBehavior: 'never', paddingLength: 6 },
-  { documentTypeKey: 'product', prefix: 'PRD', resetBehavior: 'never', paddingLength: 6 }
+  { documentTypeKey: 'product', prefix: 'PRD', resetBehavior: 'never', paddingLength: 6 },
+  { documentTypeKey: 'inventory_lot', prefix: 'LOT', resetBehavior: 'never', paddingLength: 6 },
+  { documentTypeKey: 'journal_entry', prefix: 'JE', resetBehavior: 'yearly', paddingLength: 6 }
 ]
 
 export function isApprovedDocumentTypeKey(value: string): value is DocumentTypeKey {

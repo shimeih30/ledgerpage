@@ -69,7 +69,31 @@ function installMockApi(login: () => Promise<LoginResult>): void {
     createCustomerContact: vi.fn(),
     updateCustomerContact: vi.fn(),
     deactivateCustomerContact: vi.fn(),
-    reactivateCustomerContact: vi.fn()
+    reactivateCustomerContact: vi.fn(),
+    listInventoryLotsForItem: vi.fn().mockResolvedValue({ success: true, lots: [] }),
+    getInventoryLot: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listInventoryLotMovements: vi.fn().mockResolvedValue({ success: true, movements: [] }),
+    listStockSummaries: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
+    getStockSummary: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listAccounts: vi.fn().mockResolvedValue({ success: true, accounts: [] }),
+    getAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    createAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    updateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    deactivateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    reactivateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    listJournalEntries: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    getJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    createJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    reverseJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    getTrialBalance: vi.fn().mockResolvedValue({
+      success: true,
+      trialBalance: {
+        accounts: [],
+        grandTotalDebitMinor: 0,
+        grandTotalCreditMinor: 0,
+        isBalanced: true
+      }
+    })
   }
 }
 
@@ -89,7 +113,14 @@ describe('LoginScreen', () => {
           canViewSuppliers: true,
           canManageSuppliers: true,
           canViewCustomers: true,
-          canManageCustomers: true
+          canManageCustomers: true,
+          canViewInventoryLots: true,
+          canManageInventoryLots: true,
+          canOverrideInventoryLots: true,
+          canViewAccounts: true,
+          canManageAccounts: true,
+          canViewJournalEntries: true,
+          canManageJournalEntries: true
         }
       })
     )
@@ -112,7 +143,14 @@ describe('LoginScreen', () => {
       canViewSuppliers: true,
       canManageSuppliers: true,
       canViewCustomers: true,
-      canManageCustomers: true
+      canManageCustomers: true,
+      canViewInventoryLots: true,
+      canManageInventoryLots: true,
+      canOverrideInventoryLots: true,
+      canViewAccounts: true,
+      canManageAccounts: true,
+      canViewJournalEntries: true,
+      canManageJournalEntries: true
     })
   })
 
@@ -142,7 +180,14 @@ describe('LoginScreen', () => {
         canViewSuppliers: true,
         canManageSuppliers: true,
         canViewCustomers: true,
-        canManageCustomers: true
+        canManageCustomers: true,
+        canViewInventoryLots: true,
+        canManageInventoryLots: true,
+        canOverrideInventoryLots: true,
+        canViewAccounts: true,
+        canManageAccounts: true,
+        canViewJournalEntries: true,
+        canManageJournalEntries: true
       }
     })
     installMockApi(login)
@@ -186,7 +231,14 @@ describe('LoginScreen', () => {
         canViewSuppliers: true,
         canManageSuppliers: true,
         canViewCustomers: true,
-        canManageCustomers: true
+        canManageCustomers: true,
+        canViewInventoryLots: true,
+        canManageInventoryLots: true,
+        canOverrideInventoryLots: true,
+        canViewAccounts: true,
+        canManageAccounts: true,
+        canViewJournalEntries: true,
+        canManageJournalEntries: true
       }
     })
   })

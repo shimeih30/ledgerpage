@@ -116,7 +116,31 @@ function installMockApi(overrides: MockApiOverrides = {}) {
     createCustomerContact: overrides.createCustomerContact ?? vi.fn(),
     updateCustomerContact: overrides.updateCustomerContact ?? vi.fn(),
     deactivateCustomerContact: overrides.deactivateCustomerContact ?? vi.fn(),
-    reactivateCustomerContact: overrides.reactivateCustomerContact ?? vi.fn()
+    reactivateCustomerContact: overrides.reactivateCustomerContact ?? vi.fn(),
+    listInventoryLotsForItem: vi.fn().mockResolvedValue({ success: true, lots: [] }),
+    getInventoryLot: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listInventoryLotMovements: vi.fn().mockResolvedValue({ success: true, movements: [] }),
+    listStockSummaries: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
+    getStockSummary: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listAccounts: vi.fn().mockResolvedValue({ success: true, accounts: [] }),
+    getAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    createAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    updateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    deactivateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    reactivateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    listJournalEntries: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    getJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    createJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    reverseJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    getTrialBalance: vi.fn().mockResolvedValue({
+      success: true,
+      trialBalance: {
+        accounts: [],
+        grandTotalDebitMinor: 0,
+        grandTotalCreditMinor: 0,
+        isBalanced: true
+      }
+    })
   }
   window.ledgerpage = api as unknown as typeof window.ledgerpage
   return api

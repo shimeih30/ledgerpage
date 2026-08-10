@@ -64,6 +64,20 @@
       "when": 1784956871247,
       "tag": "0008_customers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785259126622,
+      "tag": "0009_inventory_lots",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785916759248,
+      "tag": "0010_accounting_foundations",
+      "breakpoints": true
     }
   ]
 }

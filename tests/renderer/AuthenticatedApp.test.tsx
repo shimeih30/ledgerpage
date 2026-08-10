@@ -77,7 +77,31 @@ function installMockApi(overrides: {
     createCustomerContact: vi.fn(),
     updateCustomerContact: vi.fn(),
     deactivateCustomerContact: vi.fn(),
-    reactivateCustomerContact: vi.fn()
+    reactivateCustomerContact: vi.fn(),
+    listInventoryLotsForItem: vi.fn().mockResolvedValue({ success: true, lots: [] }),
+    getInventoryLot: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listInventoryLotMovements: vi.fn().mockResolvedValue({ success: true, movements: [] }),
+    listStockSummaries: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
+    getStockSummary: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    listAccounts: vi.fn().mockResolvedValue({ success: true, accounts: [] }),
+    getAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    createAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    updateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    deactivateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    reactivateAccount: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    listJournalEntries: vi.fn().mockResolvedValue({ success: true, entries: [] }),
+    getJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_found' }),
+    createJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    reverseJournalEntry: vi.fn().mockResolvedValue({ success: false, errorCode: 'not_authorized' }),
+    getTrialBalance: vi.fn().mockResolvedValue({
+      success: true,
+      trialBalance: {
+        accounts: [],
+        grandTotalDebitMinor: 0,
+        grandTotalCreditMinor: 0,
+        isBalanced: true
+      }
+    })
   }
 }
 
@@ -117,12 +141,111 @@ describe('AuthenticatedApp', () => {
           canViewSuppliers: true,
           canManageSuppliers: true,
           canViewCustomers: true,
-          canManageCustomers: true
+          canManageCustomers: true,
+          canViewInventoryLots: true,
+          canManageInventoryLots: true,
+          canOverrideInventoryLots: true,
+          canViewAccounts: true,
+          canManageAccounts: true,
+          canViewJournalEntries: true,
+          canManageJournalEntries: true
         })
     })
     render(<AuthenticatedApp />)
     expect(await screen.findByText('Slice 1 — application shell')).toBeDefined()
     expect(screen.getByText('Ben')).toBeDefined()
+  })
+
+  describe('accounting capability pass-through is correct per field, not just all-true/all-false', () => {
+    it('Executive (true/false/true/false): Accounting nav visible, manage controls absent', async () => {
+      installMockApi({
+        getSessionState: () =>
+          Promise.resolve({
+            state: 'active',
+            displayName: 'Amara',
+            isOwner: false,
+            canViewAuditLog: false,
+            canViewProducts: true,
+            canManageProducts: true,
+            canViewInventoryItems: true,
+            canManageInventoryItems: true,
+            canViewSuppliers: true,
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: true,
+            canViewAccounts: true,
+            canManageAccounts: false,
+            canViewJournalEntries: true,
+            canManageJournalEntries: false
+          })
+      })
+      render(<AuthenticatedApp />)
+      expect(await screen.findByRole('button', { name: 'Accounting' })).toBeDefined()
+    })
+
+    it('Operations (false/false/false/false): Accounting nav absent', async () => {
+      installMockApi({
+        getSessionState: () =>
+          Promise.resolve({
+            state: 'active',
+            displayName: 'Chipo',
+            isOwner: false,
+            canViewAuditLog: false,
+            canViewProducts: true,
+            canManageProducts: true,
+            canViewInventoryItems: true,
+            canManageInventoryItems: true,
+            canViewSuppliers: true,
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: false,
+            canViewAccounts: false,
+            canManageAccounts: false,
+            canViewJournalEntries: false,
+            canManageJournalEntries: false
+          })
+      })
+      render(<AuthenticatedApp />)
+      await screen.findByText('Chipo')
+      expect(screen.queryByRole('button', { name: 'Accounting' })).toBeNull()
+    })
+
+    it('Finance (true/true/true/true): Accounting nav visible with manage controls', async () => {
+      installMockApi({
+        getSessionState: () =>
+          Promise.resolve({
+            state: 'active',
+            displayName: 'Farai',
+            isOwner: false,
+            canViewAuditLog: true,
+            canViewProducts: true,
+            canManageProducts: false,
+            canViewInventoryItems: true,
+            canManageInventoryItems: false,
+            canViewSuppliers: true,
+            canManageSuppliers: true,
+            canViewCustomers: true,
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: false,
+            canOverrideInventoryLots: false,
+            canViewAccounts: true,
+            canManageAccounts: true,
+            canViewJournalEntries: true,
+            canManageJournalEntries: true
+          })
+      })
+      render(<AuthenticatedApp />)
+      const user = userEvent.setup()
+      await user.click(await screen.findByRole('button', { name: 'Accounting' }))
+      expect(await screen.findByRole('button', { name: 'New account' })).toBeDefined()
+    })
   })
 
   it('a failed session-state check fails closed to logged_out, not stuck loading', async () => {
@@ -148,7 +271,14 @@ describe('AuthenticatedApp', () => {
           canViewSuppliers: true,
           canManageSuppliers: true,
           canViewCustomers: true,
-          canManageCustomers: true
+          canManageCustomers: true,
+          canViewInventoryLots: true,
+          canManageInventoryLots: true,
+          canOverrideInventoryLots: true,
+          canViewAccounts: true,
+          canManageAccounts: true,
+          canViewJournalEntries: true,
+          canManageJournalEntries: true
         })
         .mockResolvedValue({ state: 'locked', displayName: 'Ben' })
       installMockApi({ getSessionState })
@@ -185,7 +315,14 @@ describe('AuthenticatedApp', () => {
             canViewSuppliers: true,
             canManageSuppliers: true,
             canViewCustomers: true,
-            canManageCustomers: true
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: true,
+            canViewAccounts: true,
+            canManageAccounts: true,
+            canViewJournalEntries: true,
+            canManageJournalEntries: true
           }),
         touchSession
       })
@@ -218,7 +355,14 @@ describe('AuthenticatedApp', () => {
             canViewSuppliers: true,
             canManageSuppliers: true,
             canViewCustomers: true,
-            canManageCustomers: true
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: true,
+            canViewAccounts: true,
+            canManageAccounts: true,
+            canViewJournalEntries: true,
+            canManageJournalEntries: true
           }
         })
       })
@@ -249,7 +393,14 @@ describe('AuthenticatedApp', () => {
             canViewSuppliers: true,
             canManageSuppliers: true,
             canViewCustomers: true,
-            canManageCustomers: true
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: true,
+            canViewAccounts: true,
+            canManageAccounts: true,
+            canViewJournalEntries: true,
+            canManageJournalEntries: true
           }
         })
       })
@@ -278,7 +429,14 @@ describe('AuthenticatedApp', () => {
             canViewSuppliers: true,
             canManageSuppliers: true,
             canViewCustomers: true,
-            canManageCustomers: true
+            canManageCustomers: true,
+            canViewInventoryLots: true,
+            canManageInventoryLots: true,
+            canOverrideInventoryLots: true,
+            canViewAccounts: true,
+            canManageAccounts: true,
+            canViewJournalEntries: true,
+            canManageJournalEntries: true
           })
       })
       render(<AuthenticatedApp />)
